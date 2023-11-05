@@ -1,0 +1,32 @@
+
+[project]
+name = "easytrajh5"
+authors = [
+    {name = "Bosco Ho", email = "apposite@gmail.com"},
+]
+readme = "readme.md"
+requires-python = ">=3.9"
+classifiers = ["License :: OSI Approved :: MIT License"]
+dynamic = ["version"]
+
+dependencies = [
+  "addict==2.4.0",
+  "deepdiff==6.3.1",
+  "h5py==3.8.0",
+  "mdtraj==1.9.7",
+  "numpy==1.23.3",
+  "orjson==3.9.10",
+  "ParmEd==3.4.3",
+  "pydash==7.0.6",
+  "ruamel.yaml",
+  "rich==13.6.0",
+]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+easytrajh5= [
+    "data/*",
+]
+
