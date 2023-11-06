@@ -14,7 +14,6 @@ from .select import select_mask
 
 logger = logging.getLogger(__name__)
 
-
 __doc__ = """
 Useful transforms for parmed.Structure, mdtraj.Trajectory, and OpenMM
 """
@@ -32,21 +31,32 @@ def load_parmed(fname: str) -> parmed.Structure:
     return pmd
 
 
-def get_parmed(parmed_or_pdb: str) -> parmed.Structure:
+def get_parmed_from_pdb(pdb: str) -> parmed.Structure:
     """
-    :param parmed_or_pdb: str - either .parmed or .pdb
+    Reads pdb with some sanity checks for model lines
+
+    :param pdb: str - either .parmed or .pdb
     """
-    parmed_or_pdb = str(parmed_or_pdb)
-    if Path(parmed_or_pdb).suffix == ".parmed":
-        return load_parmed(parmed_or_pdb)
-    elif Path(parmed_or_pdb).suffix == ".pdb":
-        # Check for issue where mdtraj saves MODEL 0, which throws error in parmed
-        remove_model_lines(parmed_or_pdb)
-        return parmed.load_file(parmed_or_pdb)
+    suffix = Path(pdb).suffix
+    if not suffix == ".pdb":
+        raise ValueError(f"Can't process {pdb} of type {suffix}, only .pdb")
+    # Check for issue where mdtraj saves MODEL 0, which throws error in parmed
+    remove_model_lines(pdb)
+    return parmed.load_file(pdb)
+
+
+def get_parmed_from_parmed_or_pdb(pdb_or_parmed: str) -> parmed.Structure:
+    """
+    :param pdb_or_parmed: str - either .parmed or .pdb
+    """
+    suffix = Path(pdb_or_parmed).suffix
+    if suffix == ".pdb":
+        pmd = get_parmed_from_pdb(pdb_or_parmed)
+    elif suffix == ".parmed":
+        pmd = load_parmed(pdb_or_parmed)
     else:
-        raise ValueError(
-            f"Can't process {parmed_or_pdb} of type {Path(parmed_or_pdb.suffix)}, only .pdb and .parmed"
-        )
+        raise ValueError(f"Can't process {pdb_or_parmed} of type {suffix}")
+    return pmd
 
 
 def get_parmed_from_mdtraj(traj: mdtraj.Trajectory, i_frame=0) -> parmed.Structure:
@@ -86,7 +96,9 @@ def slice_parmed(pmd: parmed.Structure, atom_mask: str) -> (parmed.Structure, [i
     return sliced_pmd, i_atoms
 
 
-def slice_mdtraj_topology(mdtraj_top: mdtraj.Topology, atom_mask: str) -> (mdtraj.Topology, [int]):
+def slice_mdtraj_topology(
+        mdtraj_top: mdtraj.Topology, atom_mask: str
+) -> (mdtraj.Topology, [int]):
     logger.info(tic("building parmed"))
     pmd = get_parmed_from_openmm(mdtraj_top.to_openmm())
     logger.info(toc())
@@ -150,12 +162,12 @@ def get_mdtraj_topology_from_dict(topology_dict) -> mdtraj.Topology:
     for chain_dict in sorted(topology_dict["chains"], key=operator.itemgetter("index")):
         chain = topology.add_chain()
         for residue_dict in sorted(
-            chain_dict["residues"], key=operator.itemgetter("index")
+                chain_dict["residues"], key=operator.itemgetter("index")
         ):
             try:
-                resSeq = residue_dict["resSeq"]
+                ref_seq = residue_dict["resSeq"]
             except KeyError:
-                resSeq = None
+                ref_seq = None
                 logger.warning(
                     "No resSeq information found in HDF file, defaulting to zero-based indices"
                 )
@@ -164,10 +176,10 @@ def get_mdtraj_topology_from_dict(topology_dict) -> mdtraj.Topology:
             except KeyError:
                 segment_id = ""
             residue = topology.add_residue(
-                residue_dict["name"], chain, resSeq=resSeq, segment_id=segment_id
+                residue_dict["name"], chain, resSeq=ref_seq, segment_id=segment_id
             )
             for atom_dict in sorted(
-                residue_dict["atoms"], key=operator.itemgetter("index")
+                    residue_dict["atoms"], key=operator.itemgetter("index")
             ):
                 try:
                     element = elem.get_by_symbol(atom_dict["element"])
@@ -180,5 +192,3 @@ def get_mdtraj_topology_from_dict(topology_dict) -> mdtraj.Topology:
         topology.add_bond(atoms[index1], atoms[index2])
 
     return topology
-
-

@@ -1,32 +1,26 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "easytrajh5"
-authors = [
-    {name = "Bosco Ho", email = "apposite@gmail.com"},
-]
-readme = "readme.md"
-requires-python = ">=3.9"
+authors = [{name = "Bosco Ho", email = "apposite@gmail.com"}]
+license = {file = "LICENSE"}
 classifiers = ["License :: OSI Approved :: MIT License"]
-dynamic = ["version"]
-
+version = "0.1"
 dependencies = [
-  "addict==2.4.0",
-  "deepdiff==6.3.1",
-  "h5py==3.8.0",
-  "mdtraj==1.9.7",
-  "numpy==1.23.3",
-  "orjson==3.9.10",
-  "ParmEd==3.4.3",
-  "pydash==7.0.6",
-  "ruamel.yaml",
-  "rich==13.6.0",
+  "addict",
+  "deepdiff",
+  "h5py",
+  "mdtraj",
+  "numpy",
+  "orjson",
+  "ParmEd",
+  "pydash",
+  "rich",
+  "ruyaml"
 ]
 
-[tool.setuptools]
-include-package-data = true
-
-[tool.setuptools.package-data]
-easytrajh5= [
-    "data/*",
-]
+[project.urls]
+Home = "https://github.com/boscoh/easytrajh5"
 

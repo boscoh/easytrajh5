@@ -4,20 +4,19 @@ import os
 import shutil
 import subprocess
 import sys
-from pathlib import Path
 import time
-
-from deepdiff import DeepDiff
-from pydash import py_
-from rich.pretty import pretty_repr
-
-logger = logging.getLogger(__name__)
+from pathlib import Path
 
 import h5py as h5
 import numpy as np
 from addict import Dict
+from deepdiff import DeepDiff
 from parmed import unit
-from ruamel.yaml import YAML
+from pydash import py_
+from rich.pretty import pretty_repr
+from ruyaml import YAML
+
+logger = logging.getLogger(__name__)
 
 yaml = YAML(typ="safe")
 yaml.default_flow_style = False
@@ -167,9 +166,6 @@ def copy_to_dir(src, dest_dir):
 
 
 def copy_file(source, target, follow_symlinks=True) -> None:
-    """
-    :param target: must be a file
-    """
     # `target` can be a symlink when `source` is a symlink and `source` is already in the required directory
     # (which we can happen e.g., foam)
     source, target = Path(source), Path(target)
@@ -181,7 +177,7 @@ def copy_file(source, target, follow_symlinks=True) -> None:
 
     # `target` can either:
     # - not exist at all (which is fine)
-    # - be a bad symlink because it links to a non-existant file (which is bad)
+    # - be a bad symlink because it links to a non-existent file (which is bad)
     # if it's a bad symlink then target.parent.resolve() will get the parent of the bad symlink (which may exist).
     # This can arise through a mistake from trying to create a symlink.
     # So we should just assert `target` isn't a symlink
@@ -202,8 +198,8 @@ def run(cmd, env=None):
 
 
 def run_with_output(cmd):
-    bytes = subprocess.check_output(cmd.split())
-    text = bytes.decode("utf-8", errors="ignore")
+    bytes_output = subprocess.check_output(cmd.split())
+    text = bytes_output.decode("utf-8", errors="ignore")
     return text
 
 
@@ -292,8 +288,8 @@ def is_equal_dict(options1, options2):
 
 def load_yaml_from_yaml_url(v):
     tokens = v.replace("yaml://", "").split("/")
-    yaml, dict_path = tokens[0:2]
-    d = load_yaml_dict(yaml)
+    yaml_fname, dict_path = tokens[0:2]
+    d = load_yaml_dict(yaml_fname)
     return py_.get(d, dict_path)
 
 
@@ -332,7 +328,7 @@ def tic(msg="No message"):
     return f"{msg}:started..."
 
 
-def toc(msg=""):
+def toc():
     tf = time.perf_counter_ns()  # final time
     if not len(time_store):
         delta_ms = 0

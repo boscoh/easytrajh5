@@ -7,14 +7,14 @@ from addict import Dict
 from mdtraj import Topology, Trajectory
 from mdtraj.reporters.basereporter import _BaseReporter
 from mdtraj.utils import ensure_type, in_units_of
-from rseed.easytraj.struct import (
+
+from .fs import tic, toc
+from .h5 import EasyH5
+from .struct import (
     slice_mdtraj_topology,
     get_dict_from_mdtraj_topology,
     get_mdtraj_topology_from_dict,
 )
-
-from .fs import tic, toc
-from .h5 import EasyH5
 
 logger = logging.getLogger(__name__)
 
@@ -78,14 +78,14 @@ class EasyTrajH5File(EasyH5):
     }
 
     def __init__(
-        self,
-        fname: str,
-        mode: str = "a",
-        atom_mask: str = "",
-        is_dry_cache: bool = False,
+            self,
+            fname: str,
+            mode: str = "a",
+            atom_mask: str = "",
+            is_dry_cache: bool = False,
     ):
         logger.info(f"{fname=} {mode=} {atom_mask=} {is_dry_cache=}")
-        logger.info(tic(f"opening"))
+        logger.info(tic("opening"))
         super().__init__(fname, mode)
         logger.info(toc())
 
@@ -201,7 +201,7 @@ class EasyTrajH5File(EasyH5):
         self.handle.flush()
 
     def read_atom_dataset_progressively(
-        self, key, frame_slice, atom_indices=slice(None)
+            self, key, frame_slice, atom_indices=slice(None)
     ):
         stride = frame_slice.step or 1
         start = frame_slice.start or 0
@@ -251,12 +251,12 @@ class EasyTrajH5File(EasyH5):
         return result
 
     def iterate_chunks(
-        self,
-        chunk: int,
-        atom_indices: List[int] = None,
-        stride: int = 1,
-        coordinates_only: bool = False,
-        return_slice: bool = False,
+            self,
+            chunk: int,
+            atom_indices: List[int] = None,
+            stride: int = 1,
+            coordinates_only: bool = False,
+            return_slice: bool = False,
     ) -> Union[Trajectory, Tuple[Trajectory, _Slice]]:
         """
         A generator over the trajectory which yields a copy of the trajectory with n_frames <= chunk. i.e., will serve up the following slices:
@@ -382,16 +382,16 @@ class EasyTrajH5File(EasyH5):
             self.set_attr("units", field.units, dataset_key=field.key)
 
     def write(
-        self,
-        coordinates,
-        time=None,
-        cell_lengths=None,
-        cell_angles=None,
-        velocities=None,
-        kineticEnergy=None,
-        potentialEnergy=None,
-        temperature=None,
-        alchemicalLambda=None,
+            self,
+            coordinates,
+            time=None,
+            cell_lengths=None,
+            cell_angles=None,
+            velocities=None,
+            kineticEnergy=None,
+            potentialEnergy=None,
+            temperature=None,
+            alchemicalLambda=None,
     ):
         logger.info(tic("writing coordinates"))
         frames_by_key = {}
@@ -431,5 +431,3 @@ class EasyTrajH5Reporter(_BaseReporter):
     @property
     def backend(self):
         return EasyTrajH5File
-
-

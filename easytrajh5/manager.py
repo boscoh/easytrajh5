@@ -1,7 +1,8 @@
 import logging
 
 import mdtraj
-from rseed.easytraj.traj import EasyTrajH5File
+
+from .traj import EasyTrajH5File
 
 logger = logging.getLogger(__name__)
 
@@ -14,11 +15,11 @@ class TrajectoryManager:
     """
 
     def __init__(
-        self,
-        paths: [str],
-        mode: str = "a",
-        atom_mask: str = "not {solvent}",
-        is_dry_cache: bool = True,
+            self,
+            paths: [str],
+            mode: str = "a",
+            atom_mask: str = "not {solvent}",
+            is_dry_cache: bool = True,
     ) -> None:
         self.paths = paths
         self.mode = mode

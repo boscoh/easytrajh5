@@ -2,14 +2,14 @@ import itertools
 import logging
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
-
 import mdtraj
 import parmed
 import pydash as py_
 from parmed.amber import AmberMask
 
 from .fs import load_yaml
+
+logger = logging.getLogger(__name__)
 
 data_dir = Path(__file__).parent
 resnames_by_keyword = load_yaml(data_dir / "data" / "select.yaml")
@@ -25,7 +25,7 @@ def select_mask(pmd, mask, temp_pdb="temp.pdb", is_fail_on_empty=True):
     atom selection langauge.
 
     There are several different types of selection modes strings, where
-    the first word is oftend used a mode selector.
+    the first word is often used a mode selector.
 
     - ommtk keywords
         "protein pocket ligand noh" - selects protein, pocket, ligand atoms and skips waters
@@ -166,7 +166,7 @@ def select_resid(pmd, resid_selection):
     will return all atoms in residues 11, 12, 13 and 14 on chain A.
 
     :param pmd: parmed.Structure
-    :param reside_selection: str
+    :param resid_selection: str
     :return: [int]
     """
     final_list = []
@@ -302,7 +302,7 @@ def original_select_atoms(
         has a different residue name you can specify it with ligand_resname. Otherwise Amber style
         residue naming is assumed.
     """
-    if keyword_selection == None and resid_selection == None:
+    if keyword_selection is None and resid_selection is None:
         raise ValueError("Must specify either keyword selection or resid_selection")
     if ligand_resname:
         resnames_by_keyword["ligand"].append(
