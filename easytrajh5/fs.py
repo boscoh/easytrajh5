@@ -85,7 +85,7 @@ def dump_yaml(o, f, mode="w"):
         yaml.dump(o, handle)
 
 
-def create_new_dataset_h5(f, value, key):
+def create_dataset_in_h5_f_with_value(f, value, key):
     if isinstance(value, list):
         shape = [len(value)]
     elif isinstance(value, np.ndarray):
@@ -95,14 +95,14 @@ def create_new_dataset_h5(f, value, key):
     f.create_dataset(key, maxshape=(None, *shape), data=np.array([value]))
 
 
-def dump_meta_h5(file, value, key):
+def dump_attr_to_h5(file, value, key):
     path = Path(file)
     mode = "a" if path.is_file() else "w"  # if the file exist
     with h5.File(path, mode) as f:
         f.attrs[key] = value
 
 
-def dump_h5(file, value, key):
+def dump_value_to_h5(file, value, key):
     path = Path(file)
 
     if path.is_file():  # if the file exist
@@ -112,10 +112,10 @@ def dump_h5(file, value, key):
                 f[key].resize(old_size + 1, axis=0)
                 f[key][old_size:] = value
             else:
-                create_new_dataset_h5(f, value, key)
+                create_dataset_in_h5_f_with_value(f, value, key)
     else:
         with h5.File(path, "w") as f:
-            create_new_dataset_h5(f, value, key)
+            create_dataset_in_h5_f_with_value(f, value, key)
 
 
 def get_yaml_str(o, indent=0):
