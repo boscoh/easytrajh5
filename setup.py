@@ -24,7 +24,7 @@ setuptools.setup(
     include_package_data=True,
     package_data={
         "easytrajh5": [
-            "easytrajh5/data/*",
+            "data/*",
         ]
     },
 )
