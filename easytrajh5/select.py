@@ -11,8 +11,8 @@ from .fs import load_yaml
 
 logger = logging.getLogger(__name__)
 
-data_dir = Path(__file__).parent
-resnames_by_keyword = load_yaml(data_dir / "data" / "select.yaml")
+data_dir = Path(__file__).parent / "data"
+resnames_by_keyword = load_yaml(data_dir / "select.yaml")
 
 
 def get_resnames(keyword):
@@ -105,15 +105,18 @@ def select_mask(pmd, mask, temp_pdb="temp.pdb", is_fail_on_empty=True):
 
 
 def process_expr(pmd, expr, temp_pdb):
-    if expr.startswith("amber "):
+    expr_lower = expr.lower()
+    if expr_lower.startswith("amber "):
         amber_mask = AmberMask(pmd, expr[6:])
         i_atoms = [i_atom for i_atom, mask in enumerate(amber_mask.Selection()) if mask]
-    elif expr.startswith("mdtraj "):
+    elif expr_lower.startswith("mdtraj "):
         mdtraj_top = mdtraj.Topology.from_openmm(pmd.topology)
         return mdtraj_top.select(expr[6:]).tolist()
-    elif expr.startswith("atom"):
+    elif expr_lower.startswith("atom"):
         i_atoms = [int(x) for x in expr[5:].split()]
-    elif expr.startswith("resid "):
+    elif expr_lower.startswith("resi "):
+        i_atoms = select_resi(pmd, expr[5:])
+    elif expr_lower.startswith("resid "):
         i_atoms = original_select_atoms(pmd, resid_selection=expr[6:])
     else:
         i_atoms = original_select_atoms(pmd, keyword_selection=expr, temp_pdb=temp_pdb)
@@ -158,6 +161,41 @@ def parse_ast(mask):
     return parse_parentheses(tokens)
 
 
+def parse_number_list(num_s):
+    """
+    Turns a string "1,2,3-4,5, 7 9-11 8-33" into a list of numbers
+    """
+    result = []
+    parse_s = num_s.replace('-', ' - ').replace(',', ' ')
+    tokens = parse_s.split()
+    n = len(tokens)
+    start = None
+    for i in range(n):
+        if tokens[i] == "-":
+            continue
+        num = int(tokens[i])
+        if i < n - 1 and tokens[i + 1] == "-":
+            start = num
+            continue
+        if start is not None:
+            for i in range(start, num + 1):
+                result.append(i)
+            start = None
+        else:
+            result.append(num)
+    return result
+
+
+def select_resi(pmd, expr):
+    i_residues = parse_number_list(expr)
+    result = []
+    for i, residue in enumerate(pmd.topology.residues()):
+        if i in i_residues:
+            for a in residue.atoms():
+                result.append(a.index)
+    return result
+
+
 def select_resid(pmd, resid_selection):
     """
     Selects atoms belonging to residues specified by the following residue string
@@ -179,14 +217,14 @@ def select_resid(pmd, resid_selection):
     # TODO check the order of chains in multichain proteins
     # TODO Currently assuming alphabet designation matches parmed order
     protein_chains = [
-        i
-        for i in pmd.topology.chains()
-        if next(i.residues()).name in get_resnames("protein")
+        chain
+        for chain in pmd.topology.chains()
+        if next(chain.residues()).name in get_resnames("protein")
     ]
     for k, chain in enumerate(protein_chains):
         # convert letter rep of chain to ordinal number rep
         if ord(chain_selection.lower()) - 96 == k + 1:
-            residues = [i for i in chain.residues()]
+            residues = [res for res in chain.residues()]
             res0 = residues[0]
             start_index = res0.index
             selected_residues = [
