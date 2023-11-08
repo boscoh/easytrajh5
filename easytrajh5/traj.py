@@ -2,7 +2,6 @@ import logging
 from typing import TypeVar, Sequence, List, Union, Tuple
 
 import numpy
-import numpy as np
 from addict import Dict
 from mdtraj import Topology, Trajectory
 from mdtraj.reporters.basereporter import _BaseReporter
@@ -173,7 +172,7 @@ class EasyTrajH5File(EasyH5):
             n_atom = sum(1 for _ in self.topology.atoms)
             if len(dry_atom_indices) == n_atom:
                 logger.info(tic("no solvent => save dry_atoms=[]"))
-                self.set_array_dataset("dry_atoms", np.array([]))
+                self.set_array_dataset("dry_atoms", numpy.array([]))
                 logger.info(toc())
                 dry_atom_indices = None
             else:
@@ -181,7 +180,7 @@ class EasyTrajH5File(EasyH5):
                 self.set_json_dataset(
                     "dry_topology", get_dict_from_mdtraj_topology(dry_top)
                 )
-                self.set_array_dataset("dry_atoms", np.array(dry_atom_indices))
+                self.set_array_dataset("dry_atoms", numpy.array(dry_atom_indices))
                 logger.info(toc())
                 atom_hash = tuple(dry_atom_indices)
                 self.topology_by_atom_hash[atom_hash] = dry_top
@@ -354,9 +353,10 @@ class EasyTrajH5File(EasyH5):
         if i_frame < 0:
             i_frame = self.get_n_frame() + i_frame
 
-        if self.last_i_frame == i_frame and self.last_atom_indices == atom_indices:
-            logger.info(f"same as last frame {i_frame}")
-            return self.last_frame
+        if self.last_i_frame == i_frame:
+            if numpy.array_equal(self.last_atom_indices, atom_indices):
+                logger.info(f"same as last frame {i_frame}")
+                return self.last_frame
 
         frame = self.read_frame_slice_as_traj(i_frame, atom_indices)
 
