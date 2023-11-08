@@ -13,6 +13,7 @@ setuptools.setup(
         "mdtraj",
         "numpy",
         "orjson",
+        "path",
         "ParmEd",
         "pydash",
         "rich",
