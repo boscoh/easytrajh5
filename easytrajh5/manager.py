@@ -9,8 +9,8 @@ logger = logging.getLogger(__name__)
 
 class TrajectoryManager:
     """
-    Abstraction to allow opening multiple trajectories that
-    have the same trajectories. The exact frame is then referenced
+    Abstraction to manage multiple trajectories that
+    have the same topologies. The exact frame is then referenced
     by [i_frame, i_traj, align_atom_mask].
     """
 
