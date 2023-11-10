@@ -206,6 +206,13 @@ class EasyH5:
         return structure.to_dict()
 
 
+def dump_attr_to_h5(h5, value, key):
+    path = Path(h5)
+    mode = "a" if path.isfile() else "w"  # if the h5 exist
+    with h5py.File(path, mode) as f:
+        f.attrs[key] = value
+
+
 def create_dataset_in_h5_file_with_value(h5_file, value, key):
     if isinstance(value, list):
         shape = [len(value)]
@@ -216,18 +223,11 @@ def create_dataset_in_h5_file_with_value(h5_file, value, key):
     h5_file.create_dataset(key, maxshape=(None, *shape), data=np.array([value]))
 
 
-def dump_attr_to_h5(h5, value, key):
-    path = Path(h5)
-    mode = "a" if path.isfile() else "w"  # if the h5 exist
-    with h5.File(path, mode) as f:
-        f.attrs[key] = value
-
-
 def dump_value_to_h5(h5, value, key):
     path = Path(h5)
 
     if path.isfile():  # if the h5 exist
-        with h5.File(path, "a") as f:
+        with h5py.File(path, "a") as f:
             if key in f.keys():
                 old_size = f[key].shape[0]
                 f[key].resize(old_size + 1, axis=0)
@@ -235,5 +235,5 @@ def dump_value_to_h5(h5, value, key):
             else:
                 create_dataset_in_h5_file_with_value(f, value, key)
     else:
-        with h5.File(path, "w") as f:
+        with h5py.File(path, "w") as f:
             create_dataset_in_h5_file_with_value(f, value, key)
