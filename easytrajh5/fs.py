@@ -7,6 +7,7 @@ import sys
 import time
 from path import Path
 import pathlib
+from glob import glob
 
 import numpy as np
 from addict import Dict
@@ -98,44 +99,35 @@ def ensure_dir(d):
 
 
 def check_file_dir(f):
-    Path(f).abspath().parent.makedirs_p()
+    ensure_dir(Path(f).abspath().parent)
 
 
 def clear_dir(d):
     path = Path(d)
-    if path.isdir():
-        path.rmtree_p()
-    path.makedirs_p()
-
-
-def get_empty_path_str(fname):
-    fname = Path(fname)
-    fname.remove_p()
-    return str(fname)
+    if not path.exists():
+        ensure_dir(path)
+    elif path.isdir():
+        for f in path.files():
+            f.remove()
+        for d in path.dirs():
+            d.rmtree()
+    else:
+        raise ValueError(f"Error: {d} is not a directory")
 
 
 def copy_to_dir(src, dest_dir):
-    Path(dest_dir).makedirs_p()
-    dst = Path(dest_dir) / Path(src).name
-    if dst.abspath() != Path(src).abspath():
-        shutil.copy(src, dst)
+    src, dest_dir = Path(src), Path(dest_dir)
+    dest_dir.makedirs_p()
+    dst = dest_dir / src.name
+    if dst.abspath() != src.abspath():
+        src.copyfile(dst)
 
 
 def copy_file(source, target, follow_symlinks=True) -> None:
-    # `target` can be a symlink when `source` is a symlink and `source` is already in the required directory
-    # (which we can happen e.g., foam)
     source, target = Path(source), Path(target)
-
     if target.exists():
-        # Target can be a symlink or a real h5 - either way we're fine and don't need to do anything.
-        # (assuming we don't want to overwrite)
         return
-
-    # Creating the directory
-    target_dir = target.abspath().parent
-    target_dir.makedirs_p()
-
-    # If source is a symlink then new h5 will not be a link unless follow_symlinks = False (not default)
+    check_file_dir(target)
     source.copyfile(target, follow_symlinks=follow_symlinks)
 
 
@@ -146,8 +138,7 @@ def run(cmd, env=None):
 
 def run_with_output(cmd):
     bytes_output = subprocess.check_output(cmd.split())
-    text = bytes_output.decode("utf-8", errors="ignore")
-    return text
+    return bytes_output.decode("utf-8", errors="ignore")
 
 
 def move_up_sub_dir(top_dir, glob_str):
@@ -177,10 +168,10 @@ def transfer_glob_str(from_dir, glob_str, to_dir):
     """
     from_dir = Path(from_dir)
     to_dir = Path(to_dir)
-    for f in from_dir.glob(glob_str):
-        rel_dir = f.parent.relpath(from_dir)
-        print(f"Copy {f} -> {to_dir / rel_dir}")
-        copy_to_dir(f, to_dir / rel_dir)
+    for f in glob(from_dir / glob_str, recursive=True):
+        rel_dir = Path(f).parent.relpath(from_dir)
+        to_rel_dir = to_dir / rel_dir
+        copy_to_dir(f, to_rel_dir)
 
 
 def get_checked_path(f):
