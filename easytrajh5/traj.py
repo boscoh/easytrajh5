@@ -1,19 +1,22 @@
 import logging
+import operator
 from typing import TypeVar, Sequence, List, Union, Tuple
 
 import numpy
+import parmed
 from addict import Dict
+from easytrajh5.fs import load_yaml, dump_yaml
+from easytrajh5.pdb import remove_model_lines
 from mdtraj import Topology, Trajectory
+from mdtraj.core import element as elem
 from mdtraj.reporters.basereporter import _BaseReporter
 from mdtraj.utils import ensure_type, in_units_of
+from path import Path
 
 from .fs import tic, toc
 from .h5 import EasyH5
-from .struct import (
-    slice_mdtraj_topology,
-    get_dict_from_mdtraj_topology,
-    get_mdtraj_topology_from_dict,
-)
+from .select import select_mask
+from .struct import get_parmed_from_openmm
 
 logger = logging.getLogger(__name__)
 
@@ -22,13 +25,13 @@ _Slice = TypeVar("_Slice", bound=Sequence)
 
 class EasyTrajH5File(EasyH5):
     """
-    Interface to read/write an mdtraj h5 file:
+    Interface to read/write mdtraj h5 h5:
        1. Interface to read from h5 as Trajectory:
             - get_traj
             - get_frame_traj
             - get_traj_with_frames
        2. Interface to write to h5 from a backend of openmm._BaseReporter:
-            - __init__(file, mode)
+            - __init__(h5, mode)
             - @property.setter topology
             - distance_unit
             - flush (optional)
@@ -64,7 +67,7 @@ class EasyTrajH5File(EasyH5):
         Dict(key="kineticEnergy", shape=(None,), units="kilojoules_per_mole"),
         Dict(key="potentialEnergy", shape=(None,), units="kilojoules_per_mole"),
         Dict(key="temperature", shape=(None,), units="kelvin"),
-        # reversed the mdtraj choice to rename this `lambda` in the file
+        # reversed the mdtraj choice to rename this `lambda` in the h5
         Dict(key="alchemicalLambda", shape=(None,), units="dimensionless"),
     ]
 
@@ -77,18 +80,18 @@ class EasyTrajH5File(EasyH5):
     }
 
     def __init__(
-            self,
-            fname: str,
-            mode: str = "a",
-            atom_mask: str = "",
-            is_dry_cache: bool = False,
+        self,
+        fname: str,
+        mode: str = "a",
+        atom_mask: str = "",
+        is_dry_cache: bool = False,
     ):
         logger.info(f"{fname=} {mode=} {atom_mask=} {is_dry_cache=}")
         logger.info(tic("opening"))
         super().__init__(fname, mode)
         logger.info(toc())
 
-        # to reach here, we've succesfully loaded an .h5 file
+        # to reach here, we've succesfully loaded an .h5 h5
         if mode == "w":
             self.has_header = False
         elif mode in ["a", "r"]:
@@ -107,7 +110,9 @@ class EasyTrajH5File(EasyH5):
 
         if is_dry_cache:
             if atom_mask and atom_mask != "not {solvent}":
-                raise ValueError("Can't set is_dry_cache=True and atom_mask at the same time")
+                raise ValueError(
+                    "Can't set is_dry_cache=True and atom_mask at the same time"
+                )
             atom_mask = "not {solvent}"
             if mode == "r":
                 logger.info("Warning: can't use dry_atom_cache in read-only mode")
@@ -200,7 +205,7 @@ class EasyTrajH5File(EasyH5):
         self.handle.flush()
 
     def read_atom_dataset_progressively(
-            self, key, frame_slice, atom_indices=slice(None)
+        self, key, frame_slice, atom_indices=slice(None)
     ):
         stride = frame_slice.step or 1
         start = frame_slice.start or 0
@@ -250,12 +255,12 @@ class EasyTrajH5File(EasyH5):
         return result
 
     def iterate_chunks(
-            self,
-            chunk: int,
-            atom_indices: List[int] = None,
-            stride: int = 1,
-            coordinates_only: bool = False,
-            return_slice: bool = False,
+        self,
+        chunk: int,
+        atom_indices: List[int] = None,
+        stride: int = 1,
+        coordinates_only: bool = False,
+        return_slice: bool = False,
     ) -> Union[Trajectory, Tuple[Trajectory, _Slice]]:
         """
         A generator over the trajectory which yields a copy of the trajectory with n_frames <= chunk. i.e., will serve up the following slices:
@@ -299,7 +304,9 @@ class EasyTrajH5File(EasyH5):
                 )
             start = end
 
-    def read_frame_slice_as_traj(self, frame_slice, atom_indices, coordinates_only=False):
+    def read_frame_slice_as_traj(
+        self, frame_slice, atom_indices, coordinates_only=False
+    ):
         """
         :param frame_slice: int | slice(0, n, stride)
         :param atom_indices: list[int] | None
@@ -382,16 +389,16 @@ class EasyTrajH5File(EasyH5):
             self.set_attr("units", field.units, dataset_key=field.key)
 
     def write(
-            self,
-            coordinates,
-            time=None,
-            cell_lengths=None,
-            cell_angles=None,
-            velocities=None,
-            kineticEnergy=None,
-            potentialEnergy=None,
-            temperature=None,
-            alchemicalLambda=None,
+        self,
+        coordinates,
+        time=None,
+        cell_lengths=None,
+        cell_angles=None,
+        velocities=None,
+        kineticEnergy=None,
+        potentialEnergy=None,
+        temperature=None,
+        alchemicalLambda=None,
     ):
         logger.info(tic("writing coordinates"))
         frames_by_key = {}
@@ -431,3 +438,162 @@ class EasyTrajH5Reporter(_BaseReporter):
     @property
     def backend(self):
         return EasyTrajH5File
+
+
+def slice_parmed(pmd: parmed.Structure, atom_mask: str) -> (parmed.Structure, [int]):
+    logger.info(tic("parsing atom mask"))
+    i_atoms = select_mask(pmd, atom_mask, is_fail_on_empty=False)
+    logger.info(toc())
+
+    # handle parmed bug!
+    if len(i_atoms) == len(pmd.atoms):
+        return pmd, i_atoms
+
+    logger.info(tic("slicing parmed"))
+    sliced_pmd = pmd[i_atoms]
+    logger.info(toc())
+
+    return sliced_pmd, i_atoms
+
+
+def slice_mdtraj_topology(mdtraj_top: Topology, atom_mask: str) -> (Topology, [int]):
+    logger.info(tic("building parmed"))
+    pmd = get_parmed_from_openmm(mdtraj_top.to_openmm())
+    logger.info(toc())
+
+    sliced_pmd, i_atoms = slice_parmed(pmd, atom_mask)
+
+    logger.info(tic("converting to mdtraj topology"))
+    sliced_top = Topology.from_openmm(sliced_pmd.topology)
+    logger.info(toc())
+
+    return sliced_top, i_atoms
+
+
+def get_dict_from_mdtraj_topology(topology):
+    try:
+        topology_dict = {"chains": [], "bonds": []}
+
+        for chain in topology.chains:
+            chain_dict = {"residues": [], "index": int(chain.index)}
+            for residue in chain.residues:
+                residue_dict = {
+                    "index": int(residue.index),
+                    "name": str(residue.name),
+                    "atoms": [],
+                    "resSeq": int(residue.resSeq),
+                    "segmentID": str(residue.segment_id),
+                }
+
+                for atom in residue.atoms:
+                    try:
+                        element_symbol_string = str(atom.element.symbol)
+                    except AttributeError:
+                        element_symbol_string = ""
+
+                    residue_dict["atoms"].append(
+                        {
+                            "index": int(atom.index),
+                            "name": str(atom.name),
+                            "element": element_symbol_string,
+                        }
+                    )
+                chain_dict["residues"].append(residue_dict)
+            topology_dict["chains"].append(chain_dict)
+
+        for atom1, atom2 in topology.bonds:
+            topology_dict["bonds"].append([int(atom1.index), int(atom2.index)])
+
+        return topology_dict
+
+    except AttributeError as e:
+        raise AttributeError(
+            "topology_object fails to implement the"
+            "chains() -> residue() -> atoms() and bond() protocol. "
+            "Specifically, we encountered the following %s" % e
+        )
+
+
+def get_mdtraj_topology_from_dict(topology_dict) -> Topology:
+    topology = Topology()
+
+    for chain_dict in sorted(topology_dict["chains"], key=operator.itemgetter("index")):
+        chain = topology.add_chain()
+        for residue_dict in sorted(
+            chain_dict["residues"], key=operator.itemgetter("index")
+        ):
+            try:
+                ref_seq = residue_dict["resSeq"]
+            except KeyError:
+                ref_seq = None
+                logger.warning(
+                    "No resSeq information found in HDF h5, defaulting to zero-based indices"
+                )
+            try:
+                segment_id = residue_dict["segmentID"]
+            except KeyError:
+                segment_id = ""
+            residue = topology.add_residue(
+                residue_dict["name"], chain, resSeq=ref_seq, segment_id=segment_id
+            )
+            for atom_dict in sorted(
+                residue_dict["atoms"], key=operator.itemgetter("index")
+            ):
+                try:
+                    element = elem.get_by_symbol(atom_dict["element"])
+                except KeyError:
+                    element = elem.virtual
+                topology.add_atom(atom_dict["name"], element, residue)
+
+    atoms = list(topology.atoms)
+    for index1, index2 in topology_dict["bonds"]:
+        topology.add_bond(atoms[index1], atoms[index2])
+
+    return topology
+
+
+def convert_h5_to_dcd_and_pdb(traj_h5, is_solvent=True):
+    dcd = str(Path(traj_h5).with_suffix(".dcd"))
+    pdb = str(Path(traj_h5).with_suffix(".pdb"))
+    yaml = Path(traj_h5).with_suffix(".rselect.yaml")
+
+    is_convert = False
+    meta = dict(is_solvent=is_solvent)
+    if yaml.exists():
+        old_meta = load_yaml(yaml)
+        if meta != old_meta:
+            is_convert = True
+    if not Path(dcd).exists():
+        is_convert = True
+
+    if is_convert:
+        logger.info(f"Loading {traj_h5}")
+        traj = mdtraj.load(traj_h5)
+
+        try:
+            logger.info("Imaging frames")
+            traj.image_molecules(inplace=True)
+        except:
+            logger.error("Failed to image molecule")
+
+        try:
+            logger.info("Aligning frames")
+            traj = traj.superpose(traj[0], atom_indices=traj.top.select("protein"))
+        except:
+            logger.error("Failed to align")
+
+        if not is_solvent:
+            logger.info(f"Removing solvent {is_solvent}")
+            traj = traj.remove_solvent()
+
+        logger.info("Centering")
+        traj.center_coordinates()
+
+        logger.info(f"Saving {dcd} {pdb}")
+        traj.save_dcd(dcd)
+
+        traj[0].save_pdb(pdb)
+        remove_model_lines(pdb)
+        dump_yaml(meta, yaml)
+
+    return dcd, pdb

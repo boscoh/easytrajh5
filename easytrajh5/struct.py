@@ -1,16 +1,14 @@
+import itertools
 import logging
-import operator
 import pickle
-from pathlib import Path
 
 import mdtraj
 import parmed
-from mdtraj.core import element as elem
+import pydash as py_
 from parmed import unit
+from path import Path
 
-from .fs import tic, toc
 from .pdb import remove_model_lines
-from .select import select_mask
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +35,7 @@ def get_parmed_from_pdb(pdb: str) -> parmed.Structure:
 
     :param pdb: str - either .parmed or .pdb
     """
-    suffix = Path(pdb).suffix
+    suffix = Path(pdb).ext
     if not suffix == ".pdb":
         raise ValueError(f"Can't process {pdb} of type {suffix}, only .pdb")
     # Check for issue where mdtraj saves MODEL 0, which throws error in parmed
@@ -49,7 +47,7 @@ def get_parmed_from_parmed_or_pdb(pdb_or_parmed: str) -> parmed.Structure:
     """
     :param pdb_or_parmed: str - either .parmed or .pdb
     """
-    suffix = Path(pdb_or_parmed).suffix
+    suffix = Path(pdb_or_parmed).ext
     if suffix == ".pdb":
         pmd = get_parmed_from_pdb(pdb_or_parmed)
     elif suffix == ".parmed":
@@ -80,115 +78,27 @@ def get_mdtraj_from_openmm(openmm_topology, openmm_positions) -> mdtraj.Trajecto
     return mdtraj.Trajectory(topology=mdtraj_topology, xyz=openmm_positions)
 
 
-def slice_parmed(pmd: parmed.Structure, atom_mask: str) -> (parmed.Structure, [int]):
-    logger.info(tic("parsing atom mask"))
-    i_atoms = select_mask(pmd, atom_mask, is_fail_on_empty=False)
-    logger.info(toc())
+def traj_calc_residue_contacts(
+    traj, i_residues1, i_residues2, cutoff_nm=None, max_n_residue=None
+) -> [int]:
+    """
+    :return: [int] - indices of closest residues to ligand
+    """
+    # Generate pairs of residue indices [[i_lig1, i_res1], [i_lig1, i_res2]....]
+    pairs = list(itertools.product(i_residues1, i_residues2))
 
-    # handle parmed bug!
-    if len(i_atoms) == len(pmd.atoms):
-        return pmd, i_atoms
+    # Calculate distances as nx1 numpy.array and pairs is nx2 numpy.array
+    # periodic=False turns off period cell correction
+    distances, pairs = mdtraj.compute_contacts(
+        traj, contacts=pairs, scheme="closest-heavy", periodic=False
+    )
 
-    logger.info(tic("slicing parmed"))
-    sliced_pmd = pmd[i_atoms]
-    logger.info(toc())
+    # Get sorted top_entries list of contact residues
+    top_entries = [(d, pair[1]) for d, pair in zip(distances[0], pairs)]
+    top_entries = py_.sort_by(top_entries, lambda e: e[0])
+    if max_n_residue:
+        top_entries = top_entries[:max_n_residue]
+    if cutoff_nm:
+        top_entries = py_.filter_(top_entries, lambda e: e[0] <= cutoff_nm)
 
-    return sliced_pmd, i_atoms
-
-
-def slice_mdtraj_topology(
-        mdtraj_top: mdtraj.Topology, atom_mask: str
-) -> (mdtraj.Topology, [int]):
-    logger.info(tic("building parmed"))
-    pmd = get_parmed_from_openmm(mdtraj_top.to_openmm())
-    logger.info(toc())
-
-    sliced_pmd, i_atoms = slice_parmed(pmd, atom_mask)
-
-    logger.info(tic("converting to mdtraj topology"))
-    sliced_top = mdtraj.Topology.from_openmm(sliced_pmd.topology)
-    logger.info(toc())
-
-    return sliced_top, i_atoms
-
-
-def get_dict_from_mdtraj_topology(topology):
-    try:
-        topology_dict = {"chains": [], "bonds": []}
-
-        for chain in topology.chains:
-            chain_dict = {"residues": [], "index": int(chain.index)}
-            for residue in chain.residues:
-                residue_dict = {
-                    "index": int(residue.index),
-                    "name": str(residue.name),
-                    "atoms": [],
-                    "resSeq": int(residue.resSeq),
-                    "segmentID": str(residue.segment_id),
-                }
-
-                for atom in residue.atoms:
-                    try:
-                        element_symbol_string = str(atom.element.symbol)
-                    except AttributeError:
-                        element_symbol_string = ""
-
-                    residue_dict["atoms"].append(
-                        {
-                            "index": int(atom.index),
-                            "name": str(atom.name),
-                            "element": element_symbol_string,
-                        }
-                    )
-                chain_dict["residues"].append(residue_dict)
-            topology_dict["chains"].append(chain_dict)
-
-        for atom1, atom2 in topology.bonds:
-            topology_dict["bonds"].append([int(atom1.index), int(atom2.index)])
-
-        return topology_dict
-
-    except AttributeError as e:
-        raise AttributeError(
-            "topology_object fails to implement the"
-            "chains() -> residue() -> atoms() and bond() protocol. "
-            "Specifically, we encountered the following %s" % e
-        )
-
-
-def get_mdtraj_topology_from_dict(topology_dict) -> mdtraj.Topology:
-    topology = mdtraj.Topology()
-
-    for chain_dict in sorted(topology_dict["chains"], key=operator.itemgetter("index")):
-        chain = topology.add_chain()
-        for residue_dict in sorted(
-                chain_dict["residues"], key=operator.itemgetter("index")
-        ):
-            try:
-                ref_seq = residue_dict["resSeq"]
-            except KeyError:
-                ref_seq = None
-                logger.warning(
-                    "No resSeq information found in HDF file, defaulting to zero-based indices"
-                )
-            try:
-                segment_id = residue_dict["segmentID"]
-            except KeyError:
-                segment_id = ""
-            residue = topology.add_residue(
-                residue_dict["name"], chain, resSeq=ref_seq, segment_id=segment_id
-            )
-            for atom_dict in sorted(
-                    residue_dict["atoms"], key=operator.itemgetter("index")
-            ):
-                try:
-                    element = elem.get_by_symbol(atom_dict["element"])
-                except KeyError:
-                    element = elem.virtual
-                topology.add_atom(atom_dict["name"], element, residue)
-
-    atoms = list(topology.atoms)
-    for index1, index2 in topology_dict["bonds"]:
-        topology.add_bond(atoms[index1], atoms[index2])
-
-    return topology
+    return [e[1] for e in top_entries]

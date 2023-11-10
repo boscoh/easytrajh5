@@ -1,9 +1,11 @@
+import json
 import re
 
 import h5py
 import numpy
-import orjson as json
+import numpy as np
 from addict import Dict
+from path import Path
 
 
 def convert_str_to_bytes(s):
@@ -202,3 +204,36 @@ class EasyH5:
         for key in self.get_attr_keys():
             structure.attr[key] = self.get_attr(key)
         return structure.to_dict()
+
+
+def create_dataset_in_h5_file_with_value(h5_file, value, key):
+    if isinstance(value, list):
+        shape = [len(value)]
+    elif isinstance(value, np.ndarray):
+        shape = value.shape
+    else:
+        shape = []
+    h5_file.create_dataset(key, maxshape=(None, *shape), data=np.array([value]))
+
+
+def dump_attr_to_h5(h5, value, key):
+    path = Path(h5)
+    mode = "a" if path.isfile() else "w"  # if the h5 exist
+    with h5.File(path, mode) as f:
+        f.attrs[key] = value
+
+
+def dump_value_to_h5(h5, value, key):
+    path = Path(h5)
+
+    if path.isfile():  # if the h5 exist
+        with h5.File(path, "a") as f:
+            if key in f.keys():
+                old_size = f[key].shape[0]
+                f[key].resize(old_size + 1, axis=0)
+                f[key][old_size:] = value
+            else:
+                create_dataset_in_h5_file_with_value(f, value, key)
+    else:
+        with h5.File(path, "w") as f:
+            create_dataset_in_h5_file_with_value(f, value, key)
