@@ -1,58 +1,71 @@
-import itertools
 import logging
-from pathlib import Path
 
 import mdtraj
+import numpy
 import parmed
 import pydash as py_
 from parmed.amber import AmberMask
+from path import Path
 
 from .fs import load_yaml
+from .struct import get_mdtraj_from_parmed, traj_calc_residue_contacts
 
 logger = logging.getLogger(__name__)
-
 data_dir = Path(__file__).parent / "data"
 resnames_by_keyword = load_yaml(data_dir / "select.yaml")
 
 
-def get_resnames(keyword):
-    return resnames_by_keyword[keyword]
-
-
-def select_mask(pmd, mask, temp_pdb="temp.pdb", is_fail_on_empty=True):
+def select_mask(pmd, mask, is_fail_on_empty=True):
     """
     Selects atom based on a selection string which is based on a combination
-    atom selection langauge.
+    atom selection langauge.There are several different types of selection
+    modes strings, where the first word is often used a mode selector.
 
-    There are several different types of selection modes strings, where
-    the first word is often used a mode selector.
-
-    - ommtk keywords
-        "protein pocket ligand noh" - selects protein, pocket, ligand atoms and skips waters
-    - ommtk resid selections
-        "resid A 0 10" - selects atoms in the first and 11th residue in chain A
-    - atom 0-indexed indices
-        "atom 0 55 43" - selects the first, 56th, and 44th atom
+    - keywords
+        - accepts (in any order): 'ligand', 'protein', 'water', 'lipid', 'salt',
+          'solvent', 'lipid', 'nucleic'
+        - If more than one keyword is specified, it is assumed they are joined with "or"
+          operation (i.e. 'ligand protein' will return both ligand and protein atom indices).
+        - The keyword 'ligand' will find the residue 'LIG', 'UNL', 'UNK', or
+          whatever is in 'ligand' in the h5 'easytrajh5/data/select.yaml'
+        - The keyword 'pocket' will find the closest 6 residues to the 'ligand' group.
+        - The keyword 'near' will require a following resname, with an optional integer, e.g.:
+            'near ATP'
+            'near ATP 5'
+        - The keyword 'resname' identifies a single residue type (usually a ligand):
+            'resname LEU'
+    - residue 0-indexed selections
+        "resi 0 10-13" - selects atoms in the first and 11th, 12th and 13th residues
+    - atom 0-indexed selections
+        "atom 0 55 43 101-105" - selects the first, 56th, 44th, 101 to 105th atom
     - AMBER-style atom selection https://parmed.github.io/ParmEd/html/amber.html#amber-mask-syntax
         "amber :ALA,LYS" - selects all alanine and lysine residues
-    - MDTraj-style atom selection
+    - MDTraj-style atom selection - https://mdtraj.org/1.9.4/atom_selection.html
         "mdtraj protein and water" - selects protein and water
     - furthermore, selections can be combined with set operators ("not", "intersect", "merge", "diff"),
         "intersect {not {amber :ALA}} {protein}"
         "diff {protein} {not {amber :ALA}}"
         "not {resname LEU}"
         "merge {near BSM 8} {amber :ALA}"
+    - some useful masks:
+        - no solvent "not {solvent}"
+        - just the protein "protein"
+        - heavy protein atoms "diff {protein} {amber @/H}"
+        - no hydrogens "not {amber @/H}"
+        - pocket and ligand "pocket ligand"
+        - specified ligand with 10 closest neighbours "resname UNL near UNL 10"
 
     :parmam parmed_structure: parmed.Structure
-    :param mask: Union[str, List[int]] - described above
-    :return: [int]
+    :param mask: Union[str, List[int]]
+
+    :return: [int] - list of atom indices to pmd
     """
 
     def get_i_atoms_of_ast(ast):
         has_list = py_.some(ast, lambda node: isinstance(node, list))
         if not has_list:
             expr = " ".join(ast)
-            value = process_expr(pmd, expr, temp_pdb)
+            value = process_expr(pmd, expr)
             return value
 
         operator = ast[0]
@@ -61,7 +74,8 @@ def select_mask(pmd, mask, temp_pdb="temp.pdb", is_fail_on_empty=True):
             if len(ast) != 2:
                 raise ValueError("not: must have only 1 following expr in {}")
             i_atoms1 = get_i_atoms_of_ast(ast[1])
-            return select_not_atoms(pmd, i_atoms1)
+            i_all_atoms = [a.idx for a in pmd.atoms]
+            return diff_list(i_all_atoms, i_atoms1)
 
         elif operator == "merge":
             result = []
