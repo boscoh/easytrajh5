@@ -1,32 +1,25 @@
+
 # EasyTrajH5
 
-Library to open-source for trajectory management using mdtraj h5
+Library for trajectory management with mdtraj H5 files
 
 - EasyH5
-    - simplified H5 class EasyH5
+    - simplified H5 class 
     - string methods
     - json methods
     - file-imports methods
-    - simple dataset creation/append
+    - easy dataset management
+    - easy access to attr
+    - schema dictionary
 - EasyTrajH5File
     - drop-in replacement for mdtraj.H5TrajecotryFile
-    - subclasses EasyH5, allowing access to h5 methods
-    - uses h5py, allows easy override for h5pyd
+    - subclasses EasyH5, allowing access to underlying h5 methods
+    - allows easy overrid to the h5py remote client
 - select_mask
     - powerful atom selection language
-- transforms between mdtraj, parmed and openmm topology/position objects
-- pdb editing functions
+    - proper set buildup using 'not', 'diff', 'merge', 'intersect'
+    - allows amber and mdtraj style selections
+    - proper 0-based indexing using flexible numbering list and ranges
+    - user defined residue classes
+- conveient transforms between mdtraj, parmed and openmm 
 
-Dependencies:
-
-- addict==2.4.0
-- deepdiff==6.3.1
-- h5py==3.8.0
-- mdtraj==1.9.7
-- numpy==1.23.3
-- orjson==3.9.10
-- ParmEd==3.4.3
-- pydash==7.0.6
-- rich==13.6.0
-- rseed.egg==info
-- ruamel.base==1.0.0
