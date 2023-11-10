@@ -1,4 +1,3 @@
-
 # EasyTrajH5
 
 Library to open-source for trajectory management using mdtraj h5

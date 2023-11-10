@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "easytrajh5"
+version = "0.1.0"
+description = "MD trajectory library"
+authors = ["Bosco Ho <apposite@gmail.com>"]
+readme = "README.md"
+packages = [{include = "easytrajh5"}]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+addict = "*"
+deepdiff = "*"
+h5py = "*"
+mdtraj = "*"
+numpy = "*"
+path = "*"
+ParmEd = "3.4.3"
+pydash = "*"
+rich = "*"
+ruyaml = "*"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
