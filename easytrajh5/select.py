@@ -100,25 +100,36 @@ def select_mask(pmd, mask, is_fail_on_empty=True):
         else:
             raise ValueError(f"Operator {operator} not in [not diff merge intersect]")
 
-    i_atoms = get_i_atoms_of_ast(parse_ast(mask))
-
-    i_atoms.sort()
-
-    res_indices = []
-    for i in i_atoms:
-        res_indices.append(pmd.atoms[i].residue.idx)
-    res_indices = py_.uniq(res_indices)
-    logger.info(
-        f'select_mask "{mask}" -> {len(i_atoms)} atoms, {len(res_indices)} residues'
-    )
+    if isinstance(mask, str):
+        i_atoms = get_i_atoms_of_ast(parse_ast(mask))
+    elif is_integer_list(mask):
+        i_atoms = mask
+    else:
+        raise ValueError(f"Can't parse atom mask {mask}")
 
     if is_fail_on_empty and not len(i_atoms):
         raise ValueError("Selection produced no atoms")
 
+    i_atoms = py_.uniq(i_atoms)
+
+    res_indices = py_.uniq([pmd.atoms[i].residue.idx for i in i_atoms])
+    logger.info(
+        f'select_mask "{mask}" -> {len(i_atoms)} atoms, {len(res_indices)} residues'
+    )
+
     return i_atoms
 
 
-def process_expr(pmd, expr, temp_pdb):
+def is_integer_list(o):
+    if not isinstance(o, (list, numpy.ndarray)):
+        return False
+    for x in o:
+        if not isinstance(x, (int, numpy.integer)):
+            return False
+    return True
+
+
+def process_expr(pmd, expr):
     expr_lower = expr.lower()
     if expr_lower.startswith("amber "):
         amber_mask = AmberMask(pmd, expr[6:])
@@ -126,14 +137,12 @@ def process_expr(pmd, expr, temp_pdb):
     elif expr_lower.startswith("mdtraj "):
         mdtraj_top = mdtraj.Topology.from_openmm(pmd.topology)
         return mdtraj_top.select(expr[6:]).tolist()
-    elif expr_lower.startswith("atom"):
-        i_atoms = [int(x) for x in expr[5:].split()]
+    elif expr_lower.startswith("atom "):
+        i_atoms = parse_number_list(expr[5:])
     elif expr_lower.startswith("resi "):
         i_atoms = select_resi(pmd, expr[5:])
-    elif expr_lower.startswith("resid "):
-        i_atoms = original_select_atoms(pmd, resid_selection=expr[6:])
     else:
-        i_atoms = original_select_atoms(pmd, keyword_selection=expr, temp_pdb=temp_pdb)
+        i_atoms = select_keywords(pmd, expr)
     return i_atoms
 
 
@@ -175,29 +184,34 @@ def parse_ast(mask):
     return parse_parentheses(tokens)
 
 
-def parse_number_list(num_s):
+def parse_number_list(num_str_or_list):
     """
     Turns a string "1,2,3-4,5, 7 9-11 8-33" into a list of numbers
     """
-    result = []
-    parse_s = num_s.replace('-', ' - ').replace(',', ' ')
-    tokens = parse_s.split()
-    n = len(tokens)
-    start = None
-    for i in range(n):
-        if tokens[i] == "-":
-            continue
-        num = int(tokens[i])
-        if i < n - 1 and tokens[i + 1] == "-":
-            start = num
-            continue
-        if start is not None:
-            for i in range(start, num + 1):
-                result.append(i)
-            start = None
-        else:
-            result.append(num)
-    return result
+    if isinstance(num_str_or_list, str):
+        result = []
+        parse_s = num_str_or_list.replace("-", " - ").replace(",", " ")
+        tokens = parse_s.split()
+        n = len(tokens)
+        start = None
+        for i in range(n):
+            if tokens[i] == "-":
+                continue
+            num = int(tokens[i])
+            if i < n - 1 and tokens[i + 1] == "-":
+                start = num
+                continue
+            if start is not None:
+                for i in range(start, num + 1):
+                    result.append(i)
+                start = None
+            else:
+                result.append(num)
+        return result
+    elif is_integer_list(num_str_or_list):
+        return num_str_or_list
+    else:
+        raise ValueError(f"Can't process {num_str_or_list}")
 
 
 def select_resi(pmd, expr):
@@ -210,163 +224,71 @@ def select_resi(pmd, expr):
     return result
 
 
-def select_resid(pmd, resid_selection):
-    """
-    Selects atoms belonging to residues specified by the following residue string
-    eg "A 11 12 13 14" where the first is the chain identifier and the following
-    residues are also assumed to be joined by 'or' operator such that the above selection
-    will return all atoms in residues 11, 12, 13 and 14 on chain A.
-
-    :param pmd: parmed.Structure
-    :param resid_selection: str
-    :return: [int]
-    """
-    final_list = []
-
-    # split up the selection syntax
-    tokens = resid_selection.split()
-    chain_selection = tokens[0]
-    resid_list = [int(i) for i in tokens[1:]]
-
-    # TODO check the order of chains in multichain proteins
-    # TODO Currently assuming alphabet designation matches parmed order
-    protein_chains = [
-        chain
-        for chain in pmd.topology.chains()
-        if next(chain.residues()).name in get_resnames("protein")
-    ]
-    for k, chain in enumerate(protein_chains):
-        # convert letter rep of chain to ordinal number rep
-        if ord(chain_selection.lower()) - 96 == k + 1:
-            residues = [res for res in chain.residues()]
-            res0 = residues[0]
-            start_index = res0.index
-            selected_residues = [
-                i for i in residues if i.index - start_index in resid_list
-            ]
-
-            if len(selected_residues) == 0:
-                raise ValueError(
-                    "Could not find one of the residues {} on protein chain.".format(
-                        resid_list
-                    )
-                )
-
-            for i in selected_residues:
-                for k in i.atoms():
-                    final_list.append(k.index)
-    return final_list
-
-
-def calc_contacts(pdb, lig_resname, cutoff_nm=None, max_n_residue=6):
-    """
-    Finds the residues closests to ligand
-
-    :param pdb: str
-    :param lig_resname: str - name of ligand residue, assumes only one
-    :param max_n_residue: int - maximum number of residues to use
-    :return: [int] - indices of closest residues to ligand
-    """
-    traj: mdtraj.Trajectory = mdtraj.load_pdb(pdb)
-    residues = list(traj.topology.residues)
-
-    logger.info(f"calc_contacts {pdb} {lig_resname}")
-
-    # Generate pairs of residue indices of ligand and protein residues
-    i_ligands = [r.index for r in residues if r.name == lig_resname]
-    if len(i_ligands) == 0:
-        raise ValueError(f"no residue with resname={lig_resname}")
-    i_residues = [r.index for r in residues if r.name in get_resnames("protein")]
-
-    result = traj_calc_residue_contacts(
-        traj, i_ligands, i_residues, cutoff_nm=cutoff_nm, max_n_residue=max_n_residue
-    )
-    print(f"closest {len(result)} residues")
-    return result
-
-
-def select_contact_residues(
-        pmd, lig_resname="LIG", max_n_residue=6, temp_pdb="temp.pdb"
-):
+def select_residue_contacts(pmd, lig_resnames=["LIG"], max_n_residue=6, cutoff_nm=None):
     """
     Finds the atoms of the residues closest to a ligand residue
 
     :return: [int]
     """
-    if Path(temp_pdb).exists():
-        Path(temp_pdb).unlink()
-    pmd.save(temp_pdb)
-    i_contact_residues = calc_contacts(temp_pdb, lig_resname, max_n_residue)
-    resid_selection = "A " + " ".join([str(i) for i in i_contact_residues])
-    return select_resid(pmd, resid_selection)
+    logger.info(f"calc_contacts to {lig_resnames}")
+
+    traj = get_mdtraj_from_parmed(pmd)
+    residues = list(traj.topology.residues)
+    protein_resnames = get_resnames("protein")
+    i_ligand_residues = [r.index for r in residues if r.name in lig_resnames]
+    i_protein_residues = [r.index for r in residues if r.name in protein_resnames]
+
+    if len(i_ligand_residues) == 0:
+        raise ValueError(f"no residue with resname={lig_resname}")
+
+    i_closest_residues = traj_calc_residue_contacts(
+        traj,
+        i_ligand_residues,
+        i_protein_residues,
+        cutoff_nm=cutoff_nm,
+        max_n_residue=max_n_residue,
+    )
+
+    logger.info(f"found {len(i_closest_residues)} residues")
+
+    return select_resi(pmd, i_closest_residues)
+
+
+def get_resnames(keyword):
+    return resnames_by_keyword[keyword]
 
 
 def select_resnames(pmd, resnames):
     return [a.idx for a in pmd.atoms if a.residue.name in resnames]
 
 
-def select_element(pmd, element):
-    return [a.idx for a in pmd.atoms if element in a.element_name]
-
-
 def diff_list(list1, list2):
-    return sorted(set(list1) - set(list2))
+    return list(sorted(set(list1) - set(list2)))
 
 
-def select_not_atoms(parmed_structure, i_atoms):
-    i_all_atoms = [a.idx for a in parmed_structure.atoms]
-    return diff_list(i_all_atoms, i_atoms)
-
-
-def original_select_atoms(
-        pmd: parmed.Structure,
-        keyword_selection=None,
-        ligand_resname=None,
-        resid_selection=None,
-        temp_pdb=None,
-) -> [int]:
+def select_keywords(pmd: parmed.Structure, keyword_selection) -> [int]:
     """
     Select a list of atom  that can be used to slice parmed objects, set restraints, or specify CVs.
     If both keyword and resid selection are applied both are returned (i.e. 'or' combining is assumed).
 
     :param keyword_selection:
-        Accepts (in any order): 'ligand', 'protein', 'water', 'lipid'
-        If more than one keyword is specified, it is assumed they are joined with "or"
-        operation (i.e. 'ligand protein' will return both ligand and protein atom indices).
-        Modifiers 'noh' and 'not' where 'noh' will exclude hydrogens and 'not' will invert the selection.
-        The keyword 'ligand' will find the residue 'LIG', 'UNL', or whatever is in 'ligand_resname'
-        The keyword 'pocket' will find the closest 6 residues to the ligand.
-        The keyword 'near' will require a following resname, with an optional integer, e.g.:
+        - accepts (in any order): 'ligand', 'protein', 'water', 'lipid', 'salt', 'solvent', 'lipid', 'nucleic'
+          If more than one keyword is specified, it is assumed they are joined with "or"
+          operation (i.e. 'ligand protein' will return both ligand and protein atom indices).
+        - The keyword 'ligand' will find the residue 'LIG', 'UNL', 'UNK', or
+          whatever is in 'ligand_resname'
+        - The keyword 'pocket' will find the closest 6 residues to the ligand.
+        - The keyword 'near' will require a following resname, with an optional integer, e.g.:
             'near ATP'
             'near ATP 5'
-        The keyword 'resname' will require a resname:
+        - The keyword 'resname' will require a resname:
             'resname LEU'
-        The keyword 'element' will require a resname:
-            'element H'
-    :param resid_selection: eg "A 11 12 13 14" where the first is the chain identifier and the following
-        residues are also assumed to be joined by 'or' operator such that the above selection will return
-        all atoms in residues 11, 12, 13 and 14 on chain A.
-
-        If 'not' or 'noh' are selected the modifier will be applied to all selections (keyword or resid). As such
-        >>> sel = original_select_atoms(pmd, keyword_selection='noh', resid_selection='A 11')
-        will return non-hydrogen atoms in residue 11 on chain A.
-    :param ligand_resname: by default 'LIG' and 'UNL' are assumed to be ligands resnames. If your ligand
-        has a different residue name you can specify it with ligand_resname. Otherwise Amber style
-        residue naming is assumed.
     """
     if keyword_selection is None and resid_selection is None:
         raise ValueError("Must specify either keyword selection or resid_selection")
-    if ligand_resname:
-        resnames_by_keyword["ligand"].append(
-            ligand_resname
-        )  # JM - added since the dict was not updating new ligand resnames
     result = []
-    if resid_selection:
-        result.extend(select_resid(pmd, resid_selection))
     if keyword_selection:
         tokens = [t for t in keyword_selection.split(" ") if t]
-        is_noh = "noh" in tokens
-        is_nosolvent = "nosolvent" in tokens
         allowed_keywords = list(resnames_by_keyword.keys()) + [
             "pocket",
             "near",
@@ -380,25 +302,17 @@ def original_select_atoms(
                 raise ValueError(f"Keyword {keyword} not in {allowed_keywords}")
             i_atoms = []
             if keyword in resnames_by_keyword:
-                i_atoms = select_resnames(pmd, resnames_by_keyword[keyword])
+                i_atoms = select_resnames(pmd, get_resnames(keyword))
             elif keyword == "pocket":
-                i_atoms = select_contact_residues(pmd, "LIG", temp_pdb=temp_pdb)
+                i_atoms = select_residue_contacts(pmd, get_resnames("ligand"))
             elif keyword == "near":
                 if len(tokens) < 1:
                     raise ValueError("keyword near requires a resname argument")
                 lig_resname = tokens.pop(0)
+                args = [pmd, [lig_resname]]
                 if len(tokens) and tokens[0].isdigit():
-                    n = int(tokens.pop(0))
-                    i_atoms = select_contact_residues(
-                        pmd,
-                        lig_resname=lig_resname,
-                        max_n_residue=n,
-                        temp_pdb=temp_pdb,
-                    )
-                else:
-                    i_atoms = select_contact_residues(
-                        pmd, lig_resname=lig_resname, temp_pdb=temp_pdb
-                    )
+                    args.append(int(tokens.pop(0)))
+                i_atoms = select_residue_contacts(*args)
             elif keyword == "resname":
                 if len(tokens) < 1:
                     raise ValueError("keyword res requires an argument")
@@ -408,38 +322,13 @@ def original_select_atoms(
                     logger.warning(
                         f"Warning: no atoms were found for resname={resname}"
                     )
-            elif keyword not in ["noh", "nosolvent"]:
-                raise ValueError(f"Can't parse '{keyword}'")
+            elif keyword == "noh":
+                raise ValueError(
+                    f"Deprecated 'noh' in '{expr}'; use 'not {{amber @/H}}"
+                )
+            elif keyword == "nosolvent":
+                raise ValueError(
+                    f"Deprecated 'nosolvent' in '{expr}'; use 'not {{solvent}}"
+                )
             result.extend(i_atoms)
-        if is_noh:
-            result = diff_list(result, select_element(pmd, "H"))
-        if is_nosolvent:
-            solvent = select_resnames(pmd, resnames_by_keyword["solvent"])
-            result = diff_list(result, solvent)
-    return sorted(set(result))
-
-
-def traj_calc_residue_contacts(
-        traj, i_residues1, i_residues2, cutoff_nm=None, max_n_residue=None
-) -> [int]:
-    """
-    :return: [int] - indices of closest residues to ligand
-    """
-    # Generate pairs of residue indices [[i_lig1, i_res1], [i_lig1, i_res2]....]
-    pairs = list(itertools.product(i_residues1, i_residues2))
-
-    # Calculate distances as nx1 numpy.array and pairs is nx2 numpy.array
-    # periodic=False turns off period cell correction
-    distances, pairs = mdtraj.compute_contacts(
-        traj, contacts=pairs, scheme="closest-heavy", periodic=False
-    )
-
-    # Get sorted top_entries list of contact residues
-    top_entries = [(d, pair[1]) for d, pair in zip(distances[0], pairs)]
-    top_entries = py_.sort_by(top_entries, lambda e: e[0])
-    if max_n_residue:
-        top_entries = top_entries[:max_n_residue]
-    if cutoff_nm:
-        top_entries = py_.filter_(top_entries, lambda e: e[0] <= cutoff_nm)
-
-    return [e[1] for e in top_entries]
+    return py_.uniq(result)
