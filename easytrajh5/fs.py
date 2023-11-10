@@ -5,13 +5,12 @@ import shutil
 import subprocess
 import sys
 import time
-from pathlib import Path
+from path import Path
+import pathlib
 
-import h5py as h5
 import numpy as np
 from addict import Dict
 from deepdiff import DeepDiff
-from parmed import unit
 from pydash import py_
 from rich.pretty import pretty_repr
 from ruyaml import YAML
@@ -26,17 +25,7 @@ class Encoder(json.JSONEncoder):
     def default(self, o):
         if isinstance(o, np.ndarray):
             return o.tolist()
-        if isinstance(o, unit.Quantity):
-            value = o._value
-            if isinstance(value, np.ndarray):
-                value = value.tolist()
-            elif isinstance(value, list):
-                value = np.array(value).tolist()
-            result = {"type": "quantity", "value": value, "unit": str(o.unit)}
-            if not hasattr(unit, result["unit"]):
-                result["unit_repr"] = repr(o.unit)
-            return result
-        if isinstance(o, Path):
+        if isinstance(o, pathlib.Path):
             return str(o)
         return json.JSONEncoder.default(self, o)
 
@@ -85,39 +74,6 @@ def dump_yaml(o, f, mode="w"):
         yaml.dump(o, handle)
 
 
-def create_dataset_in_h5_f_with_value(f, value, key):
-    if isinstance(value, list):
-        shape = [len(value)]
-    elif isinstance(value, np.ndarray):
-        shape = value.shape
-    else:
-        shape = []
-    f.create_dataset(key, maxshape=(None, *shape), data=np.array([value]))
-
-
-def dump_attr_to_h5(file, value, key):
-    path = Path(file)
-    mode = "a" if path.is_file() else "w"  # if the file exist
-    with h5.File(path, mode) as f:
-        f.attrs[key] = value
-
-
-def dump_value_to_h5(file, value, key):
-    path = Path(file)
-
-    if path.is_file():  # if the file exist
-        with h5.File(path, "a") as f:
-            if key in f.keys():
-                old_size = f[key].shape[0]
-                f[key].resize(old_size + 1, axis=0)
-                f[key][old_size:] = value
-            else:
-                create_dataset_in_h5_f_with_value(f, value, key)
-    else:
-        with h5.File(path, "w") as f:
-            create_dataset_in_h5_f_with_value(f, value, key)
-
-
 def get_yaml_str(o, indent=0):
     o = json.loads(json.dumps(o, cls=Encoder, default=str))
     import textwrap
@@ -138,30 +94,30 @@ def print_yaml(o, indent=2):
 
 
 def ensure_dir(d):
-    Path(d).mkdir(exist_ok=True, parents=True)
+    Path(d).makedirs_p()
 
 
 def check_file_dir(f):
-    Path(f).parent.mkdir(exist_ok=True, parents=True)
+    Path(f).abspath().parent.makedirs_p()
 
 
 def clear_dir(d):
-    if Path(d).exists():
-        shutil.rmtree(d)
-    Path(d).mkdir()
+    path = Path(d)
+    if path.isdir():
+        path.rmtree_p()
+    path.makedirs_p()
 
 
 def get_empty_path_str(fname):
     fname = Path(fname)
-    if fname.exists():
-        fname.unlink()
+    fname.remove_p()
     return str(fname)
 
 
 def copy_to_dir(src, dest_dir):
-    Path(dest_dir).mkdir(exist_ok=True, parents=True)
+    Path(dest_dir).makedirs_p()
     dst = Path(dest_dir) / Path(src).name
-    if dst.resolve() != Path(src).resolve():
+    if dst.abspath() != Path(src).abspath():
         shutil.copy(src, dst)
 
 
@@ -171,25 +127,16 @@ def copy_file(source, target, follow_symlinks=True) -> None:
     source, target = Path(source), Path(target)
 
     if target.exists():
-        # Target can be a symlink or a real file - either way we're fine and don't need to do anything.
+        # Target can be a symlink or a real h5 - either way we're fine and don't need to do anything.
         # (assuming we don't want to overwrite)
         return
 
-    # `target` can either:
-    # - not exist at all (which is fine)
-    # - be a bad symlink because it links to a non-existent file (which is bad)
-    # if it's a bad symlink then target.parent.resolve() will get the parent of the bad symlink (which may exist).
-    # This can arise through a mistake from trying to create a symlink.
-    # So we should just assert `target` isn't a symlink
-    if target.is_symlink():
-        raise ValueError(f"{target} is a bad symlink (resolves to {target.resolve()}")
-
     # Creating the directory
-    target_dir = target.parent.resolve()
-    target_dir.mkdir(exist_ok=True, parents=True)
+    target_dir = target.abspath().parent
+    target_dir.makedirs_p()
 
-    # If source is a symlink then new file will not be a link unless follow_symlinks = False (not default)
-    shutil.copyfile(source, target, follow_symlinks=follow_symlinks)
+    # If source is a symlink then new h5 will not be a link unless follow_symlinks = False (not default)
+    source.copyfile(target, follow_symlinks=follow_symlinks)
 
 
 def run(cmd, env=None):
@@ -209,8 +156,11 @@ def move_up_sub_dir(top_dir, glob_str):
         if not this_dir.exists():
             continue
         for sibling_f in this_dir.glob("*"):
-            shutil.copy(sibling_f, this_dir.parent)
-        shutil.rmtree(this_dir)
+            if sibling_f.isfile():
+                sibling_f.copy(this_dir.parent)
+            if sibling_f.isdir():
+                sibling_f.copytree(this_dir.parent, dirs_exist_ok=True)
+        this_dir.rmtree_p()
 
 
 def append_to_key_list(a_dict, key, val):
@@ -228,7 +178,7 @@ def transfer_glob_str(from_dir, glob_str, to_dir):
     from_dir = Path(from_dir)
     to_dir = Path(to_dir)
     for f in from_dir.glob(glob_str):
-        rel_dir = f.parent.relative_to(from_dir)
+        rel_dir = f.parent.relpath(from_dir)
         print(f"Copy {f} -> {to_dir / rel_dir}")
         copy_to_dir(f, to_dir / rel_dir)
 
@@ -246,10 +196,10 @@ saved_dirs = []
 
 def push_dir(new_dir):
     new_dir = Path(new_dir)
-    new_dir.mkdir(exist_ok=True, parents=True)
+    new_dir.makedirs_p()
     save_dir = os.getcwd()
     saved_dirs.append(save_dir)
-    os.chdir(new_dir)
+    new_dir.chdir()
 
 
 def pop_dir():
@@ -259,7 +209,7 @@ def pop_dir():
 
 
 def get_active_branch_name():
-    head_dir = Path(__file__).resolve().parent.parent.parent / ".git" / "HEAD"
+    head_dir = Path(__file__).abspath().parent.parent.parent / ".git" / "HEAD"
     if head_dir.exists():
         with head_dir.open("r") as f:
             content = f.read().splitlines()
