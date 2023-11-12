@@ -1,12 +1,10 @@
 import json
 import logging
 import os
-import shutil
 import subprocess
 import sys
 import time
 from path import Path
-import pathlib
 from glob import glob
 
 import numpy as np
@@ -26,9 +24,7 @@ class Encoder(json.JSONEncoder):
     def default(self, o):
         if isinstance(o, np.ndarray):
             return o.tolist()
-        if isinstance(o, pathlib.Path):
-            return str(o)
-        return json.JSONEncoder.default(self, o)
+        return str(o)
 
 
 def decode_object(o):
@@ -53,7 +49,7 @@ def load_json(f, is_addict=False):
 def dump_json(o, f):
     check_file_dir(f)
     with open(f, "w") as handle:
-        json.dump(o, handle, cls=Encoder, default=str)
+        json.dump(o, handle, cls=Encoder)
 
 
 def load_yaml(f, is_addict=False):
@@ -278,7 +274,8 @@ def toc():
         msg, ti = time_store.pop()
         delta_ns = tf - ti
         delta_ms = round(delta_ns / 1000000)
-    return f"{msg}:finished in {delta_ms}ms"
+    time_s = get_time_str(delta_ms / 1000)
+    return f"{msg}:finished in {time_s}"
 
 
 def repr_lines(o, prefix=""):
@@ -310,9 +307,9 @@ def get_time_str(seconds):
     elif minutes > 0:
         value = "%02d:%02d" % (minutes, seconds)
     elif seconds >= 1:
-        value = "0:%02d" % seconds
-    elif seconds == 0:
-        value = "0:00"
+        value = "%.3fs" % seconds
+    elif seconds > 0.001:
+        value = "%.0fms" % (seconds * 1000)
     else:
-        value = "0:0%.2f" % seconds
+        value = "<1ms"
     return value

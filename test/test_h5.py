@@ -5,7 +5,7 @@ import numpy
 from path import Path
 from pydash import py_
 
-from easytrajh5.h5 import EasyH5, dump_attr_to_h5, dump_value_to_h5
+from easytrajh5.h5 import EasyH5File, dump_attr_to_h5, dump_value_to_h5
 
 this_dir = Path(__file__).abspath().parent
 parmed = this_dir / "aaa-dry.parmed"
@@ -42,33 +42,33 @@ def test_easyh5():
     i_ligand_atoms = list(range(10))
     conf_h5 = this_dir / "conformations.h5"
 
-    with EasyH5(conf_h5, "w") as f:
+    with EasyH5File(conf_h5, "w") as f:
         f.set_array_dataset("i_ligand_atoms", i_ligand_atoms)
         f.create_extendable_dataset("conformation", frame_shape, numpy.float32)
         f.create_extendable_dataset("another/conformation", frame_shape, numpy.float32)
         f.set_json_dataset("stuff", stuff)
 
     for c in conformations:
-        with EasyH5(conf_h5, "a") as f:
+        with EasyH5File(conf_h5, "a") as f:
             f.extend_dataset("conformation", [c])
 
-    with EasyH5(conf_h5, mode="a") as f:
+    with EasyH5File(conf_h5, mode="a") as f:
         assert f.get_dataset("conformation").shape == conformations.shape
         assert numpy.array_equal(f.get_dataset("i_ligand_atoms")[:], i_ligand_atoms)
         assert f.get_json_dataset("stuff") == stuff
 
-    with EasyH5(this_dir / "aaa_trajectory.h5", mode="r") as f:
+    with EasyH5File(this_dir / "aaa_trajectory.h5", mode="r") as f:
         assert f.has_dataset("coordinates")
         assert f.get_dataset("coordinates").shape[2] == 3
 
 
 def test_file_insertion():
-    traj = EasyH5(this_dir / "aaa_trajectory.h5")
+    traj = EasyH5File(this_dir / "aaa_trajectory.h5")
     traj.insert_file_to_dataset("parmed", parmed)
     traj.close()
 
     new_parmed = str(parmed).replace(".parmed", ".new.parmed")
-    new_traj = EasyH5(this_dir / "aaa_trajectory.h5")
+    new_traj = EasyH5File(this_dir / "aaa_trajectory.h5")
     new_traj.extract_file_from_dataset("parmed", new_parmed)
     new_traj.close()
 
@@ -79,11 +79,11 @@ def test_blobs():
     with open(parmed, "rb") as f:
         blob = f.read()
 
-    traj = EasyH5(this_dir / "aaa_trajectory.h5")
+    traj = EasyH5File(this_dir / "aaa_trajectory.h5")
     traj.set_bytes_dataset("parmed", blob)
     traj.close()
 
-    new_traj = EasyH5(this_dir / "aaa_trajectory.h5")
+    new_traj = EasyH5File(this_dir / "aaa_trajectory.h5")
     reread_blob = new_traj.get_bytes_dataset("parmed")
     new_traj.close()
 
@@ -93,11 +93,11 @@ def test_blobs():
 def test_json():
     stuff = {"haha": "ccc"}
     shutil.copy(this_dir / "aaa_trajectory.h5", this_dir / "aaa_trajectory_j.h5")
-    traj = EasyH5(this_dir / "aaa_trajectory_j.h5")
+    traj = EasyH5File(this_dir / "aaa_trajectory_j.h5")
     traj.set_json_dataset("json_stuff", stuff)
     traj.close()
 
-    new_traj = EasyH5(this_dir / "aaa_trajectory_j.h5")
+    new_traj = EasyH5File(this_dir / "aaa_trajectory_j.h5")
     reread_stuff = new_traj.get_json_dataset("json_stuff")
     new_traj.close()
 
@@ -118,7 +118,7 @@ def test_write_h5_progressively():
     for k, v in attr.items():
         dump_attr_to_h5(h5, v, k)
 
-    with EasyH5(h5) as f:
+    with EasyH5File(h5) as f:
         dataset = f.get_dataset("data")
         return_values = dataset[:]
         return_reversed_values = f.get_dataset("data2")[:]

@@ -6,6 +6,9 @@ import numpy
 import numpy as np
 from addict import Dict
 from path import Path
+from rich.console import Console
+from rich.pretty import pprint
+from rich.table import Table
 
 
 def convert_str_to_bytes(s):
@@ -22,7 +25,7 @@ def convert_bytes_to_str(b):
     return b
 
 
-class EasyH5:
+class EasyH5File:
     """
     Convenience class to make H5 easy use for the following use-cases:
         - fixed numpy arrays
@@ -206,8 +209,8 @@ class EasyH5:
         return structure.to_dict()
 
 
-def dump_attr_to_h5(h5, value, key):
-    path = Path(h5)
+def dump_attr_to_h5(h5_fname, value, key):
+    path = Path(h5_fname)
     mode = "a" if path.isfile() else "w"  # if the h5 exist
     with h5py.File(path, mode) as f:
         f.attrs[key] = value
@@ -223,8 +226,8 @@ def create_dataset_in_h5_file_with_value(h5_file, value, key):
     h5_file.create_dataset(key, maxshape=(None, *shape), data=np.array([value]))
 
 
-def dump_value_to_h5(h5, value, key):
-    path = Path(h5)
+def dump_value_to_h5(h5_fname, value, key):
+    path = Path(h5_fname)
 
     if path.isfile():  # if the h5 exist
         with h5py.File(path, "a") as f:

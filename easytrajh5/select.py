@@ -8,7 +8,7 @@ from parmed.amber import AmberMask
 from path import Path
 
 from .fs import load_yaml
-from .struct import get_mdtraj_from_parmed, traj_calc_residue_contacts
+from .struct import get_mdtraj_from_parmed, calc_residue_contacts_with_mdtraj
 
 logger = logging.getLogger(__name__)
 data_dir = Path(__file__).parent / "data"
@@ -230,7 +230,7 @@ def select_residue_contacts(pmd, lig_resnames=["LIG"], max_n_residue=6, cutoff_n
 
     :return: [int]
     """
-    logger.info(f"calc_contacts to {lig_resnames}")
+    logger.info(f"select_residue_contacts to {lig_resnames}")
 
     traj = get_mdtraj_from_parmed(pmd)
     residues = list(traj.topology.residues)
@@ -239,9 +239,9 @@ def select_residue_contacts(pmd, lig_resnames=["LIG"], max_n_residue=6, cutoff_n
     i_protein_residues = [r.index for r in residues if r.name in protein_resnames]
 
     if len(i_ligand_residues) == 0:
-        raise ValueError(f"no residue with resname={lig_resname}")
+        raise ValueError(f"no residue with resname={lig_resnames}")
 
-    i_closest_residues = traj_calc_residue_contacts(
+    i_closest_residues = calc_residue_contacts_with_mdtraj(
         traj,
         i_ligand_residues,
         i_protein_residues,
@@ -266,12 +266,12 @@ def diff_list(list1, list2):
     return list(sorted(set(list1) - set(list2)))
 
 
-def select_keywords(pmd: parmed.Structure, keyword_selection) -> [int]:
+def select_keywords(pmd: parmed.Structure, expr: str) -> [int]:
     """
     Select a list of atom  that can be used to slice parmed objects, set restraints, or specify CVs.
     If both keyword and resid selection are applied both are returned (i.e. 'or' combining is assumed).
 
-    :param keyword_selection:
+    :param expr:
         - accepts (in any order): 'ligand', 'protein', 'water', 'lipid', 'salt', 'solvent', 'lipid', 'nucleic'
           If more than one keyword is specified, it is assumed they are joined with "or"
           operation (i.e. 'ligand protein' will return both ligand and protein atom indices).
@@ -284,18 +284,22 @@ def select_keywords(pmd: parmed.Structure, keyword_selection) -> [int]:
         - The keyword 'resname' will require a resname:
             'resname LEU'
     """
-    if keyword_selection is None and resid_selection is None:
-        raise ValueError("Must specify either keyword selection or resid_selection")
     result = []
-    if keyword_selection:
-        tokens = [t for t in keyword_selection.split(" ") if t]
-        allowed_keywords = list(resnames_by_keyword.keys()) + [
+    if expr:
+        tokens = [t for t in expr.split(" ") if t]
+        deprecated_keywords = [
+            "noh",
+            "nosolvent",
+            "resid",
+        ]
+        operant_keyords = [
             "pocket",
             "near",
             "resname",
-            "noh",
-            "nosolvent",
         ]
+        allowed_keywords = (
+            list(resnames_by_keyword.keys()) + operant_keyords + deprecated_keywords
+        )
         while len(tokens) > 0:
             keyword = tokens.pop(0)
             if keyword not in allowed_keywords:
@@ -330,5 +334,15 @@ def select_keywords(pmd: parmed.Structure, keyword_selection) -> [int]:
                 raise ValueError(
                     f"Deprecated 'nosolvent' in '{expr}'; use 'not {{solvent}}"
                 )
+            elif keyword == "nosolvent":
+                raise ValueError(f"Deprecated 'resid' in '{expr}'; use 'resi'")
             result.extend(i_atoms)
     return py_.uniq(result)
+
+
+def get_n_residue_of_mask(pmd: parmed.Structure, mask: str):
+    residues = numpy.zeros(pmd.topology.getNumResidues(), dtype=int)
+    i_atoms = select_mask(pmd, mask, is_fail_on_empty=False)
+    for a in pmd[i_atoms]:
+        residues[a.residue.idx] = 1
+    return residues.sum()

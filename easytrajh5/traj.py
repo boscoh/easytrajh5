@@ -7,14 +7,14 @@ import parmed
 from addict import Dict
 from easytrajh5.fs import load_yaml, dump_yaml
 from easytrajh5.pdb import remove_model_lines
-from mdtraj import Topology, Trajectory
+from mdtraj import Topology, Trajectory, load
 from mdtraj.core import element as elem
 from mdtraj.reporters.basereporter import _BaseReporter
 from mdtraj.utils import ensure_type, in_units_of
 from path import Path
 
 from .fs import tic, toc
-from .h5 import EasyH5
+from .h5 import EasyH5File
 from .select import select_mask
 from .struct import get_parmed_from_openmm
 
@@ -23,9 +23,9 @@ logger = logging.getLogger(__name__)
 _Slice = TypeVar("_Slice", bound=Sequence)
 
 
-class EasyTrajH5File(EasyH5):
+class EasyTrajH5File(EasyH5File):
     """
-    Interface to read/write mdtraj h5 h5:
+    Interface to read/write mdtraj h5:
        1. Interface to read from h5 as Trajectory:
             - get_traj
             - get_frame_traj
@@ -37,7 +37,7 @@ class EasyTrajH5File(EasyH5):
             - flush (optional)
             - close
             - write
-    atom_mask - selection language for atom selection
+    atom_mask - selection language for atoms
     dry_cache - cache dry atoms for fast access without waters
     """
 
@@ -99,6 +99,7 @@ class EasyTrajH5File(EasyH5):
         else:
             raise ValueError("mode must be one of ['r', 'w', 'a']")
 
+        # stores the full topology
         self._topology = None
         self.topology_by_atom_hash = {}
 
@@ -433,6 +434,9 @@ class EasyTrajH5File(EasyH5):
     def __len__(self):
         return self.get_n_frame()
 
+    def get_parmed(self, i_frame=None):
+        return get_parmed_from_openmm(self.topology.to_openmm())
+
 
 class EasyTrajH5Reporter(_BaseReporter):
     @property
@@ -552,10 +556,10 @@ def get_mdtraj_topology_from_dict(topology_dict) -> Topology:
     return topology
 
 
-def convert_h5_to_dcd_and_pdb(traj_h5, is_solvent=True):
-    dcd = str(Path(traj_h5).with_suffix(".dcd"))
-    pdb = str(Path(traj_h5).with_suffix(".pdb"))
-    yaml = Path(traj_h5).with_suffix(".rselect.yaml")
+def convert_h5_to_dcd_and_pdb(h5_fname, is_solvent=True):
+    dcd = Path(h5_fname).with_suffix(".dcd")
+    pdb = Path(h5_fname).with_suffix(".pdb")
+    yaml = Path(h5_fname).with_suffix(".rselect.yaml")
 
     is_convert = False
     meta = dict(is_solvent=is_solvent)
@@ -563,12 +567,12 @@ def convert_h5_to_dcd_and_pdb(traj_h5, is_solvent=True):
         old_meta = load_yaml(yaml)
         if meta != old_meta:
             is_convert = True
-    if not Path(dcd).exists():
+    if not dcd.exists():
         is_convert = True
 
     if is_convert:
-        logger.info(f"Loading {traj_h5}")
-        traj = mdtraj.load(traj_h5)
+        logger.info(f"Loading {h5_fname}")
+        traj = load(h5_fname)
 
         try:
             logger.info("Imaging frames")

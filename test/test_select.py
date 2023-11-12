@@ -6,7 +6,7 @@ from path import Path
 from pydash import py_
 from easytrajh5.select import parse_number_list, select_residue_contacts
 from easytrajh5.select import select_mask, is_integer_list
-from easytrajh5.struct import get_parmed_from_parmed_or_pdb, get_mdtraj_from_parmed
+from easytrajh5.struct import get_mdtraj_from_parmed, get_parmed_from_pdb
 
 THIS_DIR = Path(__file__).parent
 pdb = THIS_DIR / "pdb" / "hif2a__1__dock.pdb"
@@ -35,7 +35,7 @@ def test_number_list():
 
 
 def test_protein_ligand_selections():
-    pmd = get_parmed_from_parmed_or_pdb(pdb)
+    pmd = get_parmed_from_pdb(pdb)
 
     l_resname = "UNL"
     ligand_mask = f"amber :{l_resname}" if l_resname else "ligand"
@@ -48,7 +48,7 @@ def test_protein_ligand_selections():
 
 
 def test_mdtraj_and_parmed_indexing():
-    pmd = get_parmed_from_parmed_or_pdb(pdb)
+    pmd = get_parmed_from_pdb(pdb)
     traj = get_mdtraj_from_parmed(pmd)
     for pmd_res, traj_res in zip(pmd.residues, traj.top.residues):
         assert pmd_res.number == traj_res.resSeq
@@ -62,7 +62,7 @@ def test_amber_indexing():
     resi_list = [13, 15, 17]
     mask = "amber :" + ",".join(map(str, resi_list))
 
-    pmd = get_parmed_from_parmed_or_pdb(pdb)
+    pmd = get_parmed_from_pdb(pdb)
     i_atoms = select_mask(pmd, mask)
     found_resi_list = py_.uniq([pmd.atoms[i].residue.number for i in i_atoms])
     assert is_equal_unsorted_array(resi_list, found_resi_list)
@@ -77,7 +77,7 @@ def test_resi_selections():
     resi_list = [13, 15, 17]
     num_list = " ".join(map(str, resi_list))
 
-    pmd = get_parmed_from_parmed_or_pdb(pdb)
+    pmd = get_parmed_from_pdb(pdb)
     i_atoms = select_mask(pmd, f"resi {num_list}")
 
     found_resi_list = []
@@ -89,7 +89,7 @@ def test_resi_selections():
 
 
 def test_atom_selections():
-    pmd = get_parmed_from_parmed_or_pdb(pdb)
+    pmd = get_parmed_from_pdb(pdb)
     atom_list = [13, 15, 17]
     num_list = " ".join(map(str, atom_list))
 
@@ -112,7 +112,7 @@ def test_integer_list_checker():
 
 
 def test_contact():
-    pmd = get_parmed_from_parmed_or_pdb(pdb)
+    pmd = get_parmed_from_pdb(pdb)
 
     i_contact_atoms = select_residue_contacts(pmd, "UNL")
 

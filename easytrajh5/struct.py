@@ -35,7 +35,7 @@ def get_parmed_from_pdb(pdb: str) -> parmed.Structure:
 
     :param pdb: str - either .parmed or .pdb
     """
-    suffix = Path(pdb).ext
+    suffix = Path(pdb).ext.lower()
     if not suffix == ".pdb":
         raise ValueError(f"Can't process {pdb} of type {suffix}, only .pdb")
     # Check for issue where mdtraj saves MODEL 0, which throws error in parmed
@@ -78,7 +78,7 @@ def get_mdtraj_from_openmm(openmm_topology, openmm_positions) -> mdtraj.Trajecto
     return mdtraj.Trajectory(topology=mdtraj_topology, xyz=openmm_positions)
 
 
-def traj_calc_residue_contacts(
+def calc_residue_contacts_with_mdtraj(
     traj, i_residues1, i_residues2, cutoff_nm=None, max_n_residue=None
 ) -> [int]:
     """
@@ -102,3 +102,5 @@ def traj_calc_residue_contacts(
         top_entries = py_.filter_(top_entries, lambda e: e[0] <= cutoff_nm)
 
     return [e[1] for e in top_entries]
+
+
