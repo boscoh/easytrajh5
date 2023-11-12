@@ -6,9 +6,13 @@ authors = ["Bosco Ho <apposite@gmail.com>"]
 readme = "README.md"
 packages = [{include = "easytrajh5"}]
 
+[tool.poetry.scripts]
+easyh5 = 'easytrajh5.cli:h5'
+
 [tool.poetry.dependencies]
 python = "^3.9"
 addict = "*"
+click = "*"
 deepdiff = "*"
 h5py = "*"
 mdtraj = "*"

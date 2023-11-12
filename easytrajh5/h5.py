@@ -240,3 +240,46 @@ def dump_value_to_h5(h5_fname, value, key):
     else:
         with h5py.File(path, "w") as f:
             create_dataset_in_h5_file_with_value(f, value, key)
+
+
+def print_schema(h5_file):
+    pprint(h5_file.get_schema())
+
+
+def print_size(h5_file, title):
+    table = Table(title=title)
+    table.add_column("dataset")
+    table.add_column("size (MB)", justify="right")
+
+    def to_mb(n):
+        mb = n / 1024**2
+        if mb < 0.01:
+            return "<1 KB"
+        return f"{mb:.2f} MB"
+
+    total = 0
+    for key in h5_file.get_dataset_keys():
+        n_byte = h5_file.get_dataset(key).nbytes
+        total += n_byte
+        table.add_row(key, to_mb(n_byte))
+    table.add_row("total", to_mb(total))
+
+    print()
+    console = Console()
+    console.print(table)
+
+
+def print_json(h5_file, dataset):
+    if dataset is None:
+        print("json datasets:")
+        for key in h5_file.get_dataset_keys():
+            if key.startswith("json_"):
+                print("  " + key)
+    else:
+        if not h5_file.has_dataset(dataset):
+            print(f"Error, dataset '{dataset}' not found")
+        else:
+            if dataset.startswith("json_"):
+                pprint(h5_file.get_json_dataset(dataset))
+            else:
+                print(f"It's an array of shape {h5_file.get_dataset(dataset)}.shape")
