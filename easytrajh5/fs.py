@@ -4,15 +4,18 @@ import os
 import subprocess
 import sys
 import time
-from path import Path
 from glob import glob
 
 import numpy as np
 from addict import Dict
 from deepdiff import DeepDiff
+from parmed import unit
+from path import Path
 from pydash import py_
 from rich.pretty import pretty_repr
 from ruyaml import YAML
+
+from .quantity import get_dict_from_quantity, get_quantity_from_dict
 
 logger = logging.getLogger(__name__)
 
@@ -24,23 +27,25 @@ class Encoder(json.JSONEncoder):
     def default(self, o):
         if isinstance(o, np.ndarray):
             return o.tolist()
+        if isinstance(o, unit.Quantity):
+            return get_dict_from_quantity(o)
         return str(o)
 
 
-def decode_object(o):
+def decode(o):
     if isinstance(o, dict):
-        result = {}
-        for key, item in o.items():
-            result[key] = decode_object(item)
-        return result
+        if py_.get(o, "type") == "quantity":
+            return get_quantity_from_dict(o)
+        else:
+            return {k: decode(v) for k, v in o.items()}
     elif isinstance(o, list):
-        return [decode_object(item) for item in o]
+        return [decode(item) for item in o]
     return o
 
 
 def load_json(f, is_addict=False):
     with open(f) as handle:
-        result = decode_object(json.load(handle))
+        result = decode(json.load(handle))
     if is_addict:
         result = Dict(result)
     return result
@@ -54,7 +59,7 @@ def dump_json(o, f):
 
 def load_yaml(f, is_addict=False):
     with open(f) as handle:
-        result = decode_object(yaml.load(handle))
+        result = decode(yaml.load(handle))
     if is_addict:
         result = Dict(result)
     return result
@@ -256,6 +261,12 @@ def parse_dict_with_yaml_url(o):
     return parsed_o
 
 
+def repr_lines(o, prefix=""):
+    lines = pretty_repr(o).split("\n")
+    lines[0] = prefix + lines[0]
+    return lines
+
+
 time_store = []
 
 
@@ -276,12 +287,6 @@ def toc():
         delta_ms = round(delta_ns / 1000000)
     time_s = get_time_str(delta_ms / 1000)
     return f"{msg}:finished in {time_s}"
-
-
-def repr_lines(o, prefix=""):
-    lines = pretty_repr(o).split("\n")
-    lines[0] = prefix + lines[0]
-    return lines
 
 
 def get_time_str(seconds):

@@ -8,8 +8,8 @@ from easytrajh5.select import parse_number_list, select_residue_contacts
 from easytrajh5.select import select_mask, is_integer_list
 from easytrajh5.struct import get_mdtraj_from_parmed, get_parmed_from_pdb
 
-THIS_DIR = Path(__file__).parent
-pdb = THIS_DIR / "pdb" / "hif2a__1__dock.pdb"
+this_dir = Path(__file__).parent
+pdb = this_dir / "pdb" / "hif2a__1__dock.pdb"
 
 
 def is_equal_unsorted_array(a, b):

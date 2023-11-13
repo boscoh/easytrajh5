@@ -23,3 +23,8 @@ Trajectory management with mdtraj H5 files
   - parmed 
   - openmm 
 - cli for interrogating h5 files
+
+
+### EasyH5
+
+Accessing H5 file for basic data needs
