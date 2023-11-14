@@ -434,8 +434,9 @@ class EasyTrajH5File(EasyH5File):
     def __len__(self):
         return self.get_n_frame()
 
-    def get_parmed(self, i_frame=None):
-        return get_parmed_from_openmm(self.topology.to_openmm())
+    def get_parmed_of_topology(self, i_frame=None, atom_indices=None):
+        mdtraj_topology = self.fetch_topology(atom_indices)
+        return get_parmed_from_openmm(mdtraj_topology.to_openmm())
 
 
 class EasyTrajH5Reporter(_BaseReporter):

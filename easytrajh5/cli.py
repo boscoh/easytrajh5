@@ -122,7 +122,7 @@ def residues(h5_trajectory):
     """
     Identify the types of residues in the mdtraj h5 file
     """
-    pmd = EasyTrajH5File(h5_trajectory).get_parmed()
+    pmd = EasyTrajH5File(h5_trajectory).get_parmed_of_topology()
     print(f"residues in {h5_trajectory}")
     print(f'protein = {get_n_residue_of_mask(pmd, "protein")}')
     print(f'ligand = {get_n_residue_of_mask(pmd, "ligand")}')
