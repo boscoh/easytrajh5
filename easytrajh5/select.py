@@ -23,21 +23,21 @@ def select_mask(pmd, mask, is_fail_on_empty=True):
 
     - keywords
         - accepts (in any order): 'ligand', 'protein', 'water', 'lipid', 'salt',
-          'solvent', 'lipid', 'nucleic'
+          'solvent', 'lipid', 'nucleic', 'resname', 'resid', 'atom'
         - If more than one keyword is specified, it is assumed they are joined with "or"
           operation (i.e. 'ligand protein' will return both ligand and protein atom indices).
-        - The keyword 'ligand' will find the residue 'LIG', 'UNL', 'UNK', or
+        - 'ligand' will find the residue 'LIG', 'UNL', 'UNK', or
           whatever is in 'ligand' in the h5 'easytrajh5/data/select.yaml'
-        - The keyword 'pocket' will find the closest 6 residues to the 'ligand' group.
-        - The keyword 'near' will require a following resname, with an optional integer, e.g.:
+        - 'pocket' will find the closest 6 residues to the 'ligand' group.
+        - 'near' will require a following resname, with an optional integer, e.g.:
             'near ATP'
             'near ATP 5'
-        - The keyword 'resname' identifies a single residue type (usually a ligand):
+        - 'resname' identifies a single residue type (usually a ligand):
             'resname LEU'
-    - residue 0-indexed selections
-        "resi 0 10-13" - selects atoms in the first and 11th, 12th and 13th residues
-    - atom 0-indexed selections
-        "atom 0 55 43 101-105" - selects the first, 56th, 44th, 101 to 105th atom
+        - 'resi' for residue 0-indexed selections
+            "resi 0 10-13" - selects atoms in the first and 11th, 12th and 13th residues
+        - 'atom' atom 0-indexed selections
+            "atom 0 55 43 101-105" - selects the first, 56th, 44th, 101 to 105th atom
     - AMBER-style atom selection https://parmed.github.io/ParmEd/html/amber.html#amber-mask-syntax
         "amber :ALA,LYS" - selects all alanine and lysine residues
     - MDTraj-style atom selection - https://mdtraj.org/1.9.4/atom_selection.html
@@ -111,6 +111,7 @@ def select_mask(pmd, mask, is_fail_on_empty=True):
         raise ValueError("Selection produced no atoms")
 
     i_atoms = py_.uniq(i_atoms)
+    i_atoms.sort()
 
     res_indices = py_.uniq([pmd.atoms[i].residue.idx for i in i_atoms])
     logger.info(
@@ -133,17 +134,12 @@ def process_expr(pmd, expr):
     expr_lower = expr.lower()
     if expr_lower.startswith("amber "):
         amber_mask = AmberMask(pmd, expr[6:])
-        i_atoms = [i_atom for i_atom, mask in enumerate(amber_mask.Selection()) if mask]
+        return [i_atom for i_atom, mask in enumerate(amber_mask.Selection()) if mask]
     elif expr_lower.startswith("mdtraj "):
         mdtraj_top = mdtraj.Topology.from_openmm(pmd.topology)
         return mdtraj_top.select(expr[6:]).tolist()
-    elif expr_lower.startswith("atom "):
-        i_atoms = parse_number_list(expr[5:])
-    elif expr_lower.startswith("resi "):
-        i_atoms = select_resi(pmd, expr[5:])
     else:
-        i_atoms = select_keywords(pmd, expr)
-    return i_atoms
+        return select_keywords(pmd, expr)
 
 
 def parse_ast(mask):
@@ -217,8 +213,8 @@ def parse_number_list(num_str_or_list):
 def select_resi(pmd, expr):
     i_residues = parse_number_list(expr)
     result = []
-    for i, residue in enumerate(pmd.topology.residues()):
-        if i in i_residues:
+    for residue in pmd.topology.residues():
+        if residue.index in i_residues:
             for a in residue.atoms():
                 result.append(a.index)
     return result
@@ -270,8 +266,6 @@ def select_keywords(pmd: parmed.Structure, expr: str) -> [int]:
     """
     Select a list of atom  that can be used to slice parmed objects, set restraints, or specify CVs.
     If both keyword and resid selection are applied both are returned (i.e. 'or' combining is assumed).
-
-    :param expr:
         - accepts (in any order): 'ligand', 'protein', 'water', 'lipid', 'salt', 'solvent', 'lipid', 'nucleic'
           If more than one keyword is specified, it is assumed they are joined with "or"
           operation (i.e. 'ligand protein' will return both ligand and protein atom indices).
@@ -283,30 +277,43 @@ def select_keywords(pmd: parmed.Structure, expr: str) -> [int]:
             'near ATP 5'
         - The keyword 'resname' will require a resname:
             'resname LEU'
+
+    :param expr:
     """
     result = []
     if expr:
         tokens = [t for t in expr.split(" ") if t]
-        deprecated_keywords = [
+        keywords = list(resnames_by_keyword.keys())
+        deprecated = [
             "noh",
             "nosolvent",
             "resid",
         ]
-        operant_keyords = [
+        operants = [
+            "atom",
+            "resi",
             "pocket",
             "near",
             "resname",
         ]
-        allowed_keywords = (
-            list(resnames_by_keyword.keys()) + operant_keyords + deprecated_keywords
-        )
+        allowed_keywords = keywords + operants + deprecated
         while len(tokens) > 0:
-            keyword = tokens.pop(0)
+            keyword = tokens.pop(0).lower()
             if keyword not in allowed_keywords:
                 raise ValueError(f"Keyword {keyword} not in {allowed_keywords}")
             i_atoms = []
             if keyword in resnames_by_keyword:
                 i_atoms = select_resnames(pmd, get_resnames(keyword))
+            elif keyword == "atom":
+                if len(tokens) < 1:
+                    raise ValueError("keyword atom requires a list argument")
+                num_list = tokens.pop(0)
+                i_atoms = parse_number_list(num_list)
+            elif keyword == "resi":
+                if len(tokens) < 1:
+                    raise ValueError("keyword resi requires a list argument")
+                num_list = tokens.pop(0)
+                i_atoms = select_resi(pmd, num_list)
             elif keyword == "pocket":
                 i_atoms = select_residue_contacts(pmd, get_resnames("ligand"))
             elif keyword == "near":
@@ -319,7 +326,7 @@ def select_keywords(pmd: parmed.Structure, expr: str) -> [int]:
                 i_atoms = select_residue_contacts(*args)
             elif keyword == "resname":
                 if len(tokens) < 1:
-                    raise ValueError("keyword res requires an argument")
+                    raise ValueError("keyword resname requires an argument")
                 resname = tokens.pop(0)
                 i_atoms = select_resnames(pmd, [resname])
                 if not len(i_atoms):
@@ -341,8 +348,12 @@ def select_keywords(pmd: parmed.Structure, expr: str) -> [int]:
 
 
 def get_n_residue_of_mask(pmd: parmed.Structure, mask: str):
-    residues = numpy.zeros(pmd.topology.getNumResidues(), dtype=int)
+    n_res = pmd.topology.getNumResidues()
+    residues = numpy.zeros(n_res, dtype=int)
     i_atoms = select_mask(pmd, mask, is_fail_on_empty=False)
+    n_atom = pmd.topology.getNumAtoms()
+    if len(i_atoms) == n_atom:
+        return n_res
     for a in pmd[i_atoms]:
         residues[a.residue.idx] = 1
     return residues.sum()

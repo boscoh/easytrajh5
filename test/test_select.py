@@ -22,9 +22,9 @@ def is_equal_unsorted_array(a, b):
 
 def test_number_list():
     for num_s, num_list in [
-        ("1 2 3", [1, 2, 3]),
+        ("1,2 3", [1, 2, 3]),
         ("50-100", list(range(50, 101))),
-        ("2-3,5-7", [2, 3, 5, 6, 7]),
+        ("2-3, 5-7", [2, 3, 5, 6, 7]),
         ("7-9,11,13-15 19,21", [7, 8, 9, 11, 13, 14, 15, 19, 21]),
     ]:
         parse_list = parse_number_list(num_s)
@@ -75,7 +75,7 @@ def test_amber_indexing():
 
 def test_resi_selections():
     resi_list = [13, 15, 17]
-    num_list = " ".join(map(str, resi_list))
+    num_list = ",".join(map(str, resi_list))
 
     pmd = get_parmed_from_pdb(pdb)
     i_atoms = select_mask(pmd, f"resi {num_list}")
@@ -91,7 +91,7 @@ def test_resi_selections():
 def test_atom_selections():
     pmd = get_parmed_from_pdb(pdb)
     atom_list = [13, 15, 17]
-    num_list = " ".join(map(str, atom_list))
+    num_list = ",".join(map(str, atom_list))
 
     i_atoms = select_mask(pmd, f"atom {num_list}")
     assert is_equal_unsorted_array(i_atoms, atom_list)
