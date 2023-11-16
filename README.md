@@ -9,9 +9,8 @@ Trajectory management for mdtraj H5 files
 
 ## Quick Guide
 
-We use the MD file format defined in the mdtraj library. We
-have created `EasyTrajH5` which is a drop-in replacement
-for `mdtraj.H5TrajectryFile` object with extra functionality.
+Our main file object `EasyTrajH5` is a drop-in replacement
+for `mdtraj.H5TrajectryFile` with extra functionality.
 
 ```python
 from easytrajh5.traj import EasyTrajH5File
@@ -19,6 +18,8 @@ from easytrajh5.traj import EasyTrajH5File
 h5 = EasyTrajH5File('traj.h5')
 traj = h5.read_as_traj()
 ```
+This loads the data progressively in chunks, allowing online streaming 
+in advanced usage. 
 
 Load individual frames
 
@@ -34,14 +35,123 @@ atom_indices = [100, 115, 116]
 three_atom_traj = h5.read_as_traj(atom_indices=atom_indices)
 ```
 
-We provide an atom mask selection function using a 
-powerful new atom selection language (described in detail below):
+We provide atom selection using a new selection language (described in detail below):
 
 ```python
 from easytrajh5.traj import EasyTrajH5File
  
 mask = "intersect {mdtraj name CA} {protein}"
 ca_trace_traj = EasyTrajH5File('traj.h5', atom_mask=mask).read_as_traj()
+```
+
+Drop in replacement for `mdtraj.reporters.HDF5Reporter` in openmm
+that uses `EasyTrajH5File`: 
+
+```python
+from easytrajh5.traj import EasyTrajH5Reporter
+```
+
+
+## Atom Selection Language
+
+Why another atom selection language (we have AMBER and MDTRAJ)?
+Two main reasons. 
+
+First, we wanted user-defined 
+residue selections. These are stored in `easytrajh5/data/select.yaml`. 
+Edit this file to create any new residue selections.
+
+Second, we wanted to fix residue selection. The problem
+is that AMBER uses residue numbering (`:3,5,10-12`) defined in the PDB file 
+and not 0-based residue indexing. This means that in PDB files with multiple
+chains, the residue number is not unique. MDTRAJ on the other hand, uses 
+0-based indexing, but only allows you to use ranges (`resi 10 to 15`). 
+
+We've combined these ideas to provide our new flexible 0-based residue indexing 
+`resi 3,5,10-12,100-150,300`.
+
+We also allow you to easily drop in to AMBER and MDTRAJ simply by 
+using the `amber` and `mdtraj` keywords. When combined with set 
+operations, everything is now at your disposal.
+
+Some useful masks:
+
+- no solvent: `not {solvent}`
+- just the protein: `protein`
+- ligand and specific residues: `ligand resi 5,1,22-200`
+- heavy protein atoms: `diff {protein} {amber @/H}`
+- no hydrogens: `not {amber @/H}`
+- ligand and 6 closest residues: `pocket ligand`
+- specified ligand with 10 closest neighbours: `resname UNL near UNL 10`
+
+#### User-defined and operator keywords
+
+If more than one keyword is specified, it is assumed they are joined with "or"
+operation (i.e. `ligand protein` will return both ligand and protein atom indices).
+
+This default keywords are:
+- `ligand`, `protein`, `water`, `lipid`, `salt`, `solvent`, `lipid`, `nucleic`
+- as defined in `easytrajh5/data/select.yaml`
+- `ligand` will find the residues `LIG`, `UNL`, `UNK`
+
+Special operator keywords:
+
+- `pocket` will find the closest 6 residues to the `ligand` group.
+- `near` will require a following resname, with an optional integer, e.g.:
+    `near ATP`
+    `near ATP 5`
+- `resname` identifies a single residue type
+    `resname LEU`
+- `resi` for 0-indexed residue selections
+    `resi 0,10-13` - selects atoms in the first and 11th to 14th residues
+- `atom` for 0-indexed atoms selections
+    `atom 0,55,43,101-105` - selects the first, 56th, 44th, 102 to 106th atom
+
+#### AMBER-style atom selection
+
+- https://parmed.github.io/ParmEd/html/amber.html#amber-mask-syntax
+- `amber :ALA,LYS` - selects all alanine and lysine residues
+
+#### MDTraj-style atom selection 
+- https://mdtraj.org/1.9.4/atom_selection.html
+- `mdtraj protein and water` - selects protein and water
+
+#### Set operations
+
+Selections can be combined with set operators: `not`, `intersect`, `merge`, `diff`:
+
+- `intersect {not {amber :ALA}} {protein}`
+- `diff {protein} {not {amber :ALA}}`
+- `not {resname LEU}`
+- `merge {near BSM 8} {amber :ALA}`
+
+#### Use in python
+
+In your python code, there is a `select_mask` fn that operates on `parmed.Structure`
+objects:
+
+```python
+from easytrajh5.traj import EasyTrajH5File
+from easytrajh5.select import select_mask
+from easytrajh5.struct import slice_parmed
+ 
+pmd = EasyTrajH5File("traj.h5").get_parmed()
+i_atoms = select_mask(pmd, "not {solvent}")
+sliced_pmd = slice_parmed(pmd, i_atoms)
+```
+
+If you need to convert between different MD objects, in `easytrajh5.struct`, 
+there are some common manipulations:
+
+```python
+def dump_parmed(pmd: parmed.Structure, fname: str): 
+def load_parmed(fname: str) -> parmed.Structure:
+def get_parmed_from_pdb(pdb: str) -> parmed.Structure:
+def get_parmed_from_parmed_or_pdb(pdb_or_parmed: str) -> parmed.Structure:
+def get_parmed_from_mdtraj(traj: mdtraj.Trajectory, i_frame=0) -> parmed.Structure:
+def get_parmed_from_openmm(openmm_topology, openmm_positions=None) -> parmed.Structure:
+def get_mdtraj_from_parmed(pmd: parmed.Structure) -> mdtraj.Trajectory:
+def get_mdtraj_from_openmm(openmm_topology, openmm_positions) -> mdtraj.Trajectory:
 ```
 
 ## Use as H5
@@ -68,76 +178,38 @@ h5.insert_file_to_dataset('blob', 'blob.bin')
 h5.extract_file_from_dataset('blob', 'new_blob.bin')
 ```
 
-## EasyTrajH5 Atom Selection Language
+We can get information about the h5 file:
 
-Why another atom selection language since AMBER and MDTRAJ provides
-one?. There are two main reasons. First, we wanted user-defined 
-residue selections. These are stored in `easytrajh5/data/select.yaml`. 
-Edit this file to create any new residue selections.
+```python
+schema_json = h5.get_schema()
+dataset_keys = h5.get_dataset_keys()
+attr_keys = h5.get_attr_keys()
+```
 
-Second, we wanted to fix residue selection. The problem
-is that AMBER uses residue numbering (':3,5,10-12') defined in the PDB file 
-and not 0-based residue indexing. This means that in PDB files with multiple
-chains, the residue number is not unique. MDTRAJ on the other hand, uses 
-0-based indexing, but only allows you to use ranges ('resi 10 to 15'). We've
-combined these ideas to provide our new flexible 0-based residue indexing 
-'resi 3,5,10-12,100-150,300'.
+We can extract data
 
-We also allow you to easily drop in to AMBER and MDTRAJ simply by 
-using the 'amber' and 'mdtraj' keywords. When combined with set 
-operations, everything is now at your disposal.
+```python
+dataset = h5.get_dataset("coordinates")
+value_list = dataset[:]
+last_value = dataset[-1]
 
-Some useful masks:
+# if the attrs are set
+value = h5.get_attr('user')
+```
 
-- no solvent: "not {solvent}"
-- just the protein: "protein"
-- ligand and specific residues: "ligand resi 5,1,22-200"
-- heavy protein atoms: "diff {protein} {amber @/H}"
-- no hydrogens: "not {amber @/H}"
-- ligand and 6 closest residues: "pocket ligand"
-- specified ligand with 10 closest neighbours: "resname UNL near UNL 10"
+Convenience function to append values to an `h5` file without
+worrying about file or dataset creation:
 
-#### Our user-defined keywords and special operator keywords
+```python
+from easytrajh5.h5 import dump_value_to_h5, EasyH5File
 
-- accepts (in any order): 'ligand', 'protein', 'water', 'lipid', 'salt',
-  'solvent', 'lipid', 'nucleic'
-- If more than one keyword is specified, it is assumed they are joined with "or"
-  operation (i.e. 'ligand protein' will return both ligand and protein atom indices).
-- 'ligand' will find the residues 'LIG', 'UNL', 'UNK', or
-   whatever is in 'ligand' in the h5 'easytrajh5/data/select.yaml'
-- more can be defined in `easytrajh5/data/select.yaml`
+dump_value_to_h5('new.h5', [1,2], 'my_data_set')
+dump_value_to_h5('new.h5', [3,4], 'my_data_set')
+dump_value_to_h5('new.h5', [5,7], 'my_data_set')
 
-Special operator keywords:
-
-- 'pocket' will find the closest 6 residues to the 'ligand' group.
-- 'near' will require a following resname, with an optional integer, e.g.:
-    'near ATP'
-    'near ATP 5'
-- 'resname' identifies a single residue type
-    'resname LEU'
-- 'resi' for 0-indexed residue selections
-    "resi 0,10-13" - selects atoms in the first and 11th to 14th residues
-- 'atom' for 0-indexed atoms selections
-    "atom 0,55,43,101-105" - selects the first, 56th, 44th, 102 to 106th atom
-
-#### AMBER-style atom selection
-
-- https://parmed.github.io/ParmEd/html/amber.html#amber-mask-syntax
-- "amber :ALA,LYS" - selects all alanine and lysine residues
-
-#### MDTraj-style atom selection 
-- https://mdtraj.org/1.9.4/atom_selection.html
-- "mdtraj protein and water" - selects protein and water
-
-#### Set operations
-
-Selections can be combined with set operators ("not", "intersect", "merge", "diff"):
-
-- "intersect {not {amber :ALA}} {protein}"
-- "diff {protein} {not {amber :ALA}}"
-- "not {resname LEU}"
-- "merge {near BSM 8} {amber :ALA}"
-
+return_values = EasyH5File('new.h5').get_dataset("my_data_set")[:]
+# [[1,2], [3,4], [5,6]]
+```
 
 ## Command-line utility `easyh5`
 
@@ -207,21 +279,7 @@ Or as a quick summary table:
 ```
 
 
-## Miscellaneous utility functions
-
-In `easytrajh5.struct`, there are some common transforms between MD prep 
-and MD analysis packages:
-
-```python
-def dump_parmed(pmd: parmed.Structure, fname: str): 
-def load_parmed(fname: str) -> parmed.Structure:
-def get_parmed_from_pdb(pdb: str) -> parmed.Structure:
-def get_parmed_from_parmed_or_pdb(pdb_or_parmed: str) -> parmed.Structure:
-def get_parmed_from_mdtraj(traj: mdtraj.Trajectory, i_frame=0) -> parmed.Structure:
-def get_parmed_from_openmm(openmm_topology, openmm_positions=None) -> parmed.Structure:
-def get_mdtraj_from_parmed(pmd: parmed.Structure) -> mdtraj.Trajectory:
-def get_mdtraj_from_openmm(openmm_topology, openmm_positions) -> mdtraj.Trajectory:
-```
+## Miscellaneous utility 
 
 In `easytrajh5.quantity` we have some useful transforms to handle those
 pesky unit objects from openmm. These transforms are used in our yaml and
