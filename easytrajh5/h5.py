@@ -249,6 +249,8 @@ def print_schema(h5_file):
 def print_size(h5_file, title):
     table = Table(title=title)
     table.add_column("dataset")
+    table.add_column("shape")
+    table.add_column("dtype")
     table.add_column("size (MB)", justify="right")
 
     def to_mb(n):
@@ -259,10 +261,11 @@ def print_size(h5_file, title):
 
     total = 0
     for key in h5_file.get_dataset_keys():
-        n_byte = h5_file.get_dataset(key).nbytes
+        dataset = h5_file.get_dataset(key)
+        n_byte = dataset.nbytes
         total += n_byte
-        table.add_row(key, to_mb(n_byte))
-    table.add_row("total", to_mb(total))
+        table.add_row(key, str(dataset.shape), str(dataset.dtype), to_mb(n_byte))
+    table.add_row("total", '', '', to_mb(total))
 
     print()
     console = Console()
