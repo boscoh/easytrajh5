@@ -30,6 +30,8 @@ def test_get_parmed():
     n_solvent = get_n_residue_of_mask(pmd, "solvent")
     assert n_solvent == 0
 
+    pmd = EasyTrajH5File(h5, atom_mask="mdtraj name CA").get_parmed()
+    assert len(pmd.atoms) == 3
 
 def test_blobs():
     with open(parmed, "rb") as f:

@@ -125,8 +125,8 @@ class EasyTrajH5File(EasyH5File):
                 return
 
         if atom_mask:
-            # By referencing self.topology, the topology gets loaded
-            sliced_top, atom_indices = self.slice_topology("not {solvent}")
+            logger.info("setting atom_indices from atom_mask")
+            sliced_top, atom_indices = self.slice_topology(atom_mask)
             self.atom_indices = atom_indices
             atom_hash = tuple(atom_indices)
             self.topology_by_atom_hash[atom_hash] = sliced_top
@@ -199,6 +199,7 @@ class EasyTrajH5File(EasyH5File):
         if self.atom_indices is None:
             mdtraj_topology = self.topology
         else:
+            logger.info("Select atom_mask")
             mdtraj_topology = self.fetch_topology(self.atom_indices)
             positions_angstroms = positions_angstroms[self.atom_indices]
         return get_parmed_from_openmm(mdtraj_topology.to_openmm(), positions_angstroms)
