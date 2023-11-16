@@ -8,7 +8,7 @@ from parmed.amber import AmberMask
 from path import Path
 
 from .fs import load_yaml
-from .struct import get_mdtraj_from_parmed, calc_residue_contacts_with_mdtraj
+from .struct import get_mdtraj_from_parmed, calc_residue_contacts_with_mdtraj, slice_parmed
 
 logger = logging.getLogger(__name__)
 data_dir = Path(__file__).parent / "data"
@@ -23,7 +23,7 @@ def select_mask(pmd, mask, is_fail_on_empty=True):
 
     - keywords
         - accepts (in any order): 'ligand', 'protein', 'water', 'lipid', 'salt',
-          'solvent', 'lipid', 'nucleic', 'resname', 'resid', 'atom'
+          'solvent', 'lipid', 'nucleic', 'resname', 'resi', 'atom'
         - If more than one keyword is specified, it is assumed they are joined with "or"
           operation (i.e. 'ligand protein' will return both ligand and protein atom indices).
         - 'ligand' will find the residue 'LIG', 'UNL', 'UNK', or
@@ -354,6 +354,6 @@ def get_n_residue_of_mask(pmd: parmed.Structure, mask: str):
     n_atom = pmd.topology.getNumAtoms()
     if len(i_atoms) == n_atom:
         return n_res
-    for a in pmd[i_atoms]:
+    for a in slice_parmed(pmd, i_atoms):
         residues[a.residue.idx] = 1
     return residues.sum()

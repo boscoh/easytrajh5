@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import logging
-from pathlib import Path
+from path import Path
 
 import click
 import mdtraj
@@ -49,7 +49,7 @@ def merge(h5_list, prefix, mask):
         for f_id in range(0, traj_mananger.get_n_frame(t_id)):
             frames.append(traj_mananger.read_as_frame_traj((f_id, t_id)))
     frames = mdtraj.join(frames)
-    fname = str(Path(prefix).with_suffix(".h5"))
+    fname = Path(prefix).with_suffix(".h5")
     print(f"Merged {h5_list} --> {fname}")
     frames.save_hdf5(fname)
 
@@ -107,9 +107,10 @@ def contacts(h5_trajectory, mask, output_dir):
 
     sqr = md.geometry.squareform(cont[0], cont[1])
 
+    output_dir = Path(output_dir)
     ensure_dir(output_dir)
-    fname_avg = Path(output_dir) / "contact_avg.npy"
-    fname_std = Path(output_dir) / "contact_std.npy"
+    fname_avg = output_dir / "contact_avg.npy"
+    fname_std = output_dir / "contact_std.npy"
     with open(fname_avg, "wb") as f:
         numpy.save(f, numpy.mean(sqr, axis=0))
     with open(fname_std, "wb") as f:
@@ -122,14 +123,23 @@ def residues(h5_trajectory):
     """
     Identify the types of residues in the mdtraj h5 file
     """
-    pmd = EasyTrajH5File(h5_trajectory).get_parmed_of_topology()
-    print(f"residues in {h5_trajectory}")
-    print(f'protein = {get_n_residue_of_mask(pmd, "protein")}')
-    print(f'ligand = {get_n_residue_of_mask(pmd, "ligand")}')
-    print(f'solvent = {get_n_residue_of_mask(pmd, "solvent")}')
-    print(
-        f'other = {get_n_residue_of_mask(pmd, "not {merge {protein} {solvent} {ligand}}")}'
-    )
+    pmd = EasyTrajH5File(h5_trajectory).get_parmed()
+    get_n_residue_of_mask(pmd, "protein")
+    get_n_residue_of_mask(pmd, "ligand")
+    get_n_residue_of_mask(pmd, "solvent")
+    get_n_residue_of_mask(pmd, "not {merge {protein} {solvent} {ligand}}")
+
+
+@h5.command()
+@click.argument("h5-trajectory", default="trajectory.h5")
+def pdb(h5_trajectory):
+    """
+    Identify the types of residues in the mdtraj h5 file
+    """
+    pmd = EasyTrajH5File(h5_trajectory).get_parmed()
+    pdb = Path(h5_trajectory).with_suffix(".pdb")
+    pmd.save(pdb, overwrite=True)
+    print(f"wrote {pdb}")
 
 
 if __name__ == "__main__":

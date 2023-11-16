@@ -14,6 +14,9 @@ logger = logging.getLogger(__name__)
 
 __doc__ = """
 Useful transforms for parmed.Structure, mdtraj.Trajectory, and OpenMM
+
+mdtraj, openmm: nanometers
+pdb, parmed: angstroms
 """
 
 
@@ -61,8 +64,11 @@ def get_parmed_from_mdtraj(traj: mdtraj.Trajectory, i_frame=0) -> parmed.Structu
     return parmed.openmm.load_topology(traj.top.to_openmm(), xyz=traj.xyz[i_frame])
 
 
-def get_parmed_from_openmm(openmm_topology, openmm_positions=None) -> parmed.Structure:
-    return parmed.openmm.load_topology(openmm_topology, xyz=openmm_positions)
+def get_parmed_from_openmm(openmm_topology, positions=None) -> parmed.Structure:
+    """
+    :param positions: unit.Quantity(dist) | [float] in angstroms
+    """
+    return parmed.openmm.load_topology(openmm_topology, xyz=positions)
 
 
 def get_mdtraj_from_parmed(pmd: parmed.Structure) -> mdtraj.Trajectory:
@@ -104,3 +110,7 @@ def calc_residue_contacts_with_mdtraj(
     return [e[1] for e in top_entries]
 
 
+def slice_parmed(pmd: parmed.Structure, i_atoms: [int]) -> parmed.Structure:
+    # This function avoids the issue where pmd expects a bit
+    # mask for selections for full selections
+    return pmd if len(i_atoms) == len(pmd.atoms) else pmd[i_atoms]

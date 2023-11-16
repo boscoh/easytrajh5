@@ -1,22 +1,21 @@
 import logging
 import operator
-from typing import TypeVar, Sequence, List, Union, Tuple
+from typing import TypeVar, Sequence
 
 import numpy
-import parmed
 from addict import Dict
-from easytrajh5.fs import load_yaml, dump_yaml
-from easytrajh5.pdb import remove_model_lines
 from mdtraj import Topology, Trajectory, load
 from mdtraj.core import element as elem
 from mdtraj.reporters.basereporter import _BaseReporter
 from mdtraj.utils import ensure_type, in_units_of
 from path import Path
 
+from easytrajh5.fs import load_yaml, dump_yaml
+from easytrajh5.pdb import remove_model_lines
 from .fs import tic, toc
 from .h5 import EasyH5File
 from .select import select_mask
-from .struct import get_parmed_from_openmm
+from .struct import get_parmed_from_openmm, slice_parmed
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +38,10 @@ class EasyTrajH5File(EasyH5File):
             - write
     atom_mask - selection language for atoms
     dry_cache - cache dry atoms for fast access without waters
+
     """
 
+    # nanometers
     distance_unit = Trajectory._distance_unit
 
     fields = [
@@ -87,11 +88,11 @@ class EasyTrajH5File(EasyH5File):
         is_dry_cache: bool = False,
     ):
         logger.info(f"{fname=} {mode=} {atom_mask=} {is_dry_cache=}")
-        logger.info(tic("opening"))
+        logger.info(tic("open connection"))
         super().__init__(fname, mode)
         logger.info(toc())
 
-        # to reach here, we've succesfully loaded an .h5 h5
+        # to reach here, we've successfully loaded an .h5 file
         if mode == "w":
             self.has_header = False
         elif mode in ["a", "r"]:
@@ -115,6 +116,7 @@ class EasyTrajH5File(EasyH5File):
                     "Can't set is_dry_cache=True and atom_mask at the same time"
                 )
             atom_mask = "not {solvent}"
+            logger.info(f"{mode=} {atom_mask=}")
             if mode == "r":
                 logger.info("Warning: can't use dry_atom_cache in read-only mode")
             else:
@@ -124,7 +126,7 @@ class EasyTrajH5File(EasyH5File):
 
         if atom_mask:
             # By referencing self.topology, the topology gets loaded
-            sliced_top, atom_indices = slice_mdtraj_topology(self.topology, atom_mask)
+            sliced_top, atom_indices = self.slice_topology("not {solvent}")
             self.atom_indices = atom_indices
             atom_hash = tuple(atom_indices)
             self.topology_by_atom_hash[atom_hash] = sliced_top
@@ -139,7 +141,7 @@ class EasyTrajH5File(EasyH5File):
         if self._topology is None:
             if not self.has_dataset("topology"):
                 raise ValueError(f"No topology saved in {self.fname}")
-            logger.info(tic(f"loading topology from '{self.fname}'"))
+            logger.info(tic("loading topology"))
             topology_dict = self.get_json_dataset("topology")
             self._topology = get_mdtraj_topology_from_dict(topology_dict)
             logger.info(toc())
@@ -156,7 +158,7 @@ class EasyTrajH5File(EasyH5File):
 
     def load_dry_topology_from_cache(self):
         if self.has_dataset("dry_atoms"):
-            logger.info(tic("reading dry-atoms"))
+            logger.info(tic("reading dry_atoms"))
             dry_atom_indices = self.get_dataset("dry_atoms")[:]
             logger.info(toc())
 
@@ -164,7 +166,7 @@ class EasyTrajH5File(EasyH5File):
                 logger.info("dry_atoms=[] -> no dry_topology")
                 dry_atom_indices = None
             elif self.has_dataset("dry_topology"):
-                logger.info(tic("loading cached dry topology"))
+                logger.info(tic("reading dry_topology"))
                 topology_dict = self.get_json_dataset("dry_topology")
                 dry_top = get_mdtraj_topology_from_dict(topology_dict)
                 logger.info(toc())
@@ -172,9 +174,7 @@ class EasyTrajH5File(EasyH5File):
                 self.topology_by_atom_hash[atom_hash] = dry_top
         else:
             # haven't tried calculating dry_topology yet
-            dry_top, dry_atom_indices = slice_mdtraj_topology(
-                self.topology, "not {solvent}"
-            )
+            dry_top, dry_atom_indices = self.slice_topology("not {solvent}")
             n_atom = sum(1 for _ in self.topology.atoms)
             if len(dry_atom_indices) == n_atom:
                 logger.info(tic("no solvent => save dry_atoms=[]"))
@@ -182,16 +182,46 @@ class EasyTrajH5File(EasyH5File):
                 logger.info(toc())
                 dry_atom_indices = None
             else:
-                logger.info(tic("saving cached dry topology"))
+                logger.info(tic("saving dry_topology and dry_atoms"))
                 self.set_json_dataset(
                     "dry_topology", get_dict_from_mdtraj_topology(dry_top)
                 )
                 self.set_array_dataset("dry_atoms", numpy.array(dry_atom_indices))
+                self.flush()
                 logger.info(toc())
                 atom_hash = tuple(dry_atom_indices)
                 self.topology_by_atom_hash[atom_hash] = dry_top
 
         return dry_atom_indices
+
+    def get_parmed(self, i_frame=0):
+        positions_angstroms = self.get_dataset("coordinates")[i_frame] * 10
+        if self.atom_indices is None:
+            mdtraj_topology = self.topology
+        else:
+            mdtraj_topology = self.fetch_topology(self.atom_indices)
+            positions_angstroms = positions_angstroms[self.atom_indices]
+        return get_parmed_from_openmm(mdtraj_topology.to_openmm(), positions_angstroms)
+
+    def slice_topology(self, atom_mask: str) -> (Topology, [int]):
+        logger.info(tic("building parmed"))
+        positions_angstroms = self.get_dataset("coordinates")[0] * 10
+        pmd = get_parmed_from_openmm(self.topology.to_openmm(), positions_angstroms)
+        logger.info(toc())
+
+        logger.info(tic("select mask"))
+        i_atoms = select_mask(pmd, atom_mask, is_fail_on_empty=False)
+        logger.info(toc())
+
+        logger.info(tic("slicing parmed"))
+        sliced_pmd = slice_parmed(pmd, i_atoms)
+        logger.info(toc())
+
+        logger.info(tic("converting to mdtraj topology"))
+        sliced_top = Topology.from_openmm(sliced_pmd.topology)
+        logger.info(toc())
+
+        return sliced_top, i_atoms
 
     @property
     def topology(self) -> Topology:
@@ -205,9 +235,17 @@ class EasyTrajH5File(EasyH5File):
         self.set_json_dataset("topology", get_dict_from_mdtraj_topology(topology))
         self.handle.flush()
 
+    def get_n_frame(self):
+        return self.get_dataset("coordinates").shape[0]
+
+    def __len__(self):
+        return self.get_n_frame()
+
     def read_atom_dataset_progressively(
         self, key, frame_slice, atom_indices=slice(None)
-    ):
+    ) -> numpy.ndarray:
+        """Returns numpy.ndarrary[float] of [n_frame x n_atom x 3]"""
+
         stride = frame_slice.step or 1
         start = frame_slice.start or 0
 
@@ -254,56 +292,6 @@ class EasyTrajH5File(EasyH5File):
                 break
 
         return result
-
-    def iterate_chunks(
-        self,
-        chunk: int,
-        atom_indices: List[int] = None,
-        stride: int = 1,
-        coordinates_only: bool = False,
-        return_slice: bool = False,
-    ) -> Union[Trajectory, Tuple[Trajectory, _Slice]]:
-        """
-        A generator over the trajectory which yields a copy of the trajectory with n_frames <= chunk. i.e., will serve up the following slices:
-        [slice(0, chunk, stride), slice(chunk, 2*chunk, stride)...].
-
-        chunk: int - maximimum size of the chunk. Note: will be modified by `stride` and if `n_frames` is not an exact multiple of `chunk` in the final chunk.
-        atom_indices: List[int] - atom indices to return.
-        stride: int - the stride of the chunk. Must be divisor of `chunk`.
-        coordinates_only: bool - whether to return only the coordinates.  This will save time but may affect your analysis routines.
-        return_slice: bool - whether to return the slice used.
-        """
-        n_frames = self.get_n_frame()
-        chunk = min(n_frames, chunk)
-
-        assert isinstance(chunk, int) and isinstance(
-            stride, int
-        ), "chunk and stride should be integer"
-        assert (chunk >= 1) and (stride >= 1), "chunk and stride should be 1 or more"
-        assert chunk > stride, "chunk should be greater than stride"
-        assert chunk % stride == 0, "chunk should be multiple of stride"
-
-        n_chunks = n_frames // chunk
-        if n_chunks * chunk < n_frames:
-            n_chunks += 1
-
-        start = 0
-
-        for _ in range(n_chunks):
-            end = min(start + chunk, n_frames)
-            frame_slice = slice(start, end, stride)
-            if return_slice:
-                yield (
-                    self.read_frame_slice_as_traj(
-                        frame_slice, atom_indices, coordinates_only
-                    ),
-                    frame_slice,
-                )
-            else:
-                yield self.read_frame_slice_as_traj(
-                    frame_slice, atom_indices, coordinates_only
-                )
-            start = end
 
     def read_frame_slice_as_traj(
         self, frame_slice, atom_indices, coordinates_only=False
@@ -428,51 +416,11 @@ class EasyTrajH5File(EasyH5File):
         logger.info(toc())
         logger.info(f'final shape: {frames_by_key["coordinates"].shape}')
 
-    def get_n_frame(self):
-        return self.get_dataset("coordinates").shape[0]
-
-    def __len__(self):
-        return self.get_n_frame()
-
-    def get_parmed_of_topology(self, i_frame=None, atom_indices=None):
-        mdtraj_topology = self.fetch_topology(atom_indices)
-        return get_parmed_from_openmm(mdtraj_topology.to_openmm())
-
 
 class EasyTrajH5Reporter(_BaseReporter):
     @property
     def backend(self):
         return EasyTrajH5File
-
-
-def slice_parmed(pmd: parmed.Structure, atom_mask: str) -> (parmed.Structure, [int]):
-    logger.info(tic("parsing atom mask"))
-    i_atoms = select_mask(pmd, atom_mask, is_fail_on_empty=False)
-    logger.info(toc())
-
-    # handle parmed bug!
-    if len(i_atoms) == len(pmd.atoms):
-        return pmd, i_atoms
-
-    logger.info(tic("slicing parmed"))
-    sliced_pmd = pmd[i_atoms]
-    logger.info(toc())
-
-    return sliced_pmd, i_atoms
-
-
-def slice_mdtraj_topology(mdtraj_top: Topology, atom_mask: str) -> (Topology, [int]):
-    logger.info(tic("building parmed"))
-    pmd = get_parmed_from_openmm(mdtraj_top.to_openmm())
-    logger.info(toc())
-
-    sliced_pmd, i_atoms = slice_parmed(pmd, atom_mask)
-
-    logger.info(tic("converting to mdtraj topology"))
-    sliced_top = Topology.from_openmm(sliced_pmd.topology)
-    logger.info(toc())
-
-    return sliced_top, i_atoms
 
 
 def get_dict_from_mdtraj_topology(topology):
@@ -578,13 +526,13 @@ def convert_h5_to_dcd_and_pdb(h5_fname, is_solvent=True):
         try:
             logger.info("Imaging frames")
             traj.image_molecules(inplace=True)
-        except:
+        except Exception:
             logger.error("Failed to image molecule")
 
         try:
             logger.info("Aligning frames")
             traj = traj.superpose(traj[0], atom_indices=traj.top.select("protein"))
-        except:
+        except Exception:
             logger.error("Failed to align")
 
         if not is_solvent:

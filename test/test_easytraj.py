@@ -3,6 +3,7 @@ import filecmp
 from mdtraj import load_hdf5
 from path import Path
 
+from easytrajh5.select import get_n_residue_of_mask
 from easytrajh5.traj import EasyTrajH5File
 
 this_dir = Path(__file__).abspath().parent
@@ -17,6 +18,17 @@ def test_file_insertion():
     with EasyTrajH5File(h5) as f:
         f.extract_file_from_dataset("parmed", new_parmed)
     assert filecmp.cmp(parmed, new_parmed)
+
+
+def test_get_parmed():
+    h5 = this_dir / "aaa_trajectory.h5"
+    pmd = EasyTrajH5File(h5).get_parmed()
+    n_solvent = get_n_residue_of_mask(pmd, "solvent")
+    assert n_solvent > 0
+
+    pmd = EasyTrajH5File(h5, atom_mask="not {solvent}").get_parmed()
+    n_solvent = get_n_residue_of_mask(pmd, "solvent")
+    assert n_solvent == 0
 
 
 def test_blobs():
