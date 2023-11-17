@@ -266,22 +266,22 @@ Or as a quick summary table:
 
 ```bash
 > easyh5 dataset examples/trajectory.h5 
-#Warning: importing 'simtk.openmm' is deprecated.  Import 'openmm' instead.
-
-                  sims/high_bf/trajectory.h5                  
-                                                              
-  dataset           shape              dtype       size (MB)  
- ──────────────────────────────────────────────────────────── 
-  cell_angles       (1500, 3)          float32       0.02 MB  
-  cell_lengths      (1500, 3)          float32       0.02 MB  
-  coordinates       (1500, 25767, 3)   float32     442.32 MB  
-  kineticEnergy     (1500,)            float32         <1 KB  
-  potentialEnergy   (1500,)            float32         <1 KB  
-  temperature       (1500,)            float32         <1 KB  
-  time              (1500,)            float32         <1 KB  
-  topology          (1,)               |S2083249     1.99 MB  
-                                                              
-  total                                            444.36 MB  
+# Warning: importing 'simtk.openmm' is deprecated.  Import 'openmm' instead.
+# 
+#                   sims/high_bf/trajectory.h5                  
+#                                                               
+#   dataset           shape              dtype       size (MB)  
+#  ──────────────────────────────────────────────────────────── 
+#   cell_angles       (1500, 3)          float32       0.02 MB  
+#   cell_lengths      (1500, 3)          float32       0.02 MB  
+#   coordinates       (1500, 25767, 3)   float32     442.32 MB  
+#   kineticEnergy     (1500,)            float32         <1 KB  
+#   potentialEnergy   (1500,)            float32         <1 KB  
+#   temperature       (1500,)            float32         <1 KB  
+#   time              (1500,)            float32         <1 KB  
+#   topology          (1,)               |S2083249     1.99 MB  
+#                                                               
+#   total                                            444.36 MB  
 ```
 
 To get an overview of a dataset:
