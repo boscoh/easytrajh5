@@ -6,6 +6,7 @@ import numpy
 import numpy as np
 from addict import Dict
 from path import Path
+from rich import box
 from rich.console import Console
 from rich.pretty import pprint
 from rich.table import Table
@@ -247,7 +248,7 @@ def print_schema(h5_file):
 
 
 def print_size(h5_file, title):
-    table = Table(title=title)
+    table = Table(title=title, box=box.SIMPLE)
     table.add_column("dataset")
     table.add_column("shape")
     table.add_column("dtype")
@@ -265,7 +266,9 @@ def print_size(h5_file, title):
         n_byte = dataset.nbytes
         total += n_byte
         table.add_row(key, str(dataset.shape), str(dataset.dtype), to_mb(n_byte))
-    table.add_row("total", '', '', to_mb(total))
+
+    table.add_row()
+    table.add_row("total", "", "", to_mb(total))
 
     print()
     console = Console()

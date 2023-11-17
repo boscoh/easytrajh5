@@ -8,7 +8,8 @@ from path import Path
 from easytrajh5.h5 import EasyH5File, print_schema, print_size, print_json
 from easytrajh5.manager import TrajectoryManager
 from easytrajh5.select import get_n_residue_of_mask, select_mask
-from easytrajh5.struct import slice_parmed
+from easytrajh5.select import parse_number_list
+from easytrajh5.struct import slice_parmed, get_parmed_from_parmed_or_pdb
 from easytrajh5.traj import EasyTrajH5File
 
 logger = logging.getLogger(__name__)
@@ -27,35 +28,33 @@ def h5():
 @h5.command()
 @click.argument("h5")
 def schema(h5):
-    """Examine layout of h5"""
+    """Examine layout of H5"""
     print_schema(EasyH5File(h5))
 
 
 @h5.command()
 @click.argument("h5")
-def datasets(h5):
-    """Examine contents of h5"""
-    print_size(EasyH5File(h5), h5)
-
-
-@h5.command()
-@click.argument("h5")
-@click.argument("dataset")
+@click.argument("dataset", default=None, required=False)
 @click.argument("frames", default=None, required=False)
-def peek(h5, dataset, frames):
+def dataset(h5, dataset, frames):
     """Examine contents of h5"""
-    from easytrajh5.select import parse_number_list
-
     f = EasyH5File(h5)
-    d = f.get_dataset(dataset)
-    print(f"Data at {h5}/{dataset}/shape{d.shape}")
-    if frames is not None:
-        i_frames = parse_number_list(frames)
-        chunk = d[i_frames]
-        print(f"Peek at {frames} shape{chunk.shape}")
+    if dataset is None:
+        print_size(f, h5)
     else:
-        chunk = d[:]
-    print(chunk)
+        d = f.get_dataset(dataset)
+        print()
+        print(f"  {h5}")
+        print(f"     dataset={dataset}")
+        print(f"     shape={d.shape}")
+        print()
+        if frames is not None:
+            print(f"frames({frames})=")
+            i_frames = parse_number_list(frames)
+            chunk = d[i_frames]
+        else:
+            chunk = d[:]
+        print(chunk)
 
 
 @h5.command()
@@ -63,41 +62,18 @@ def peek(h5, dataset, frames):
 @click.argument("dataset", required=False)
 def json(h5, dataset):
     """
-    Get JSON configs associated with entry
+    Get JSON configs of H5
     """
     print_json(EasyH5File(h5), dataset)
 
 
 @h5.command()
-@click.argument("h5-trajectory", default="trajectory.h5")
-def content(h5_trajectory):
-    """
-    Identify the types of residues in the mdtraj h5 file
-    """
-    pmd = EasyTrajH5File(h5_trajectory).get_parmed()
-    get_n_residue_of_mask(pmd, "protein")
-    get_n_residue_of_mask(pmd, "ligand")
-    get_n_residue_of_mask(pmd, "solvent")
-    get_n_residue_of_mask(pmd, "not {merge {protein} {solvent} {ligand}}")
-
-
-@h5.command()
-@click.argument("h5-trajectory", default="trajectory.h5")
-@click.option(
-    "--mask",
-    default="",
-    help="atom selection",
-    show_default=True,
-)
-@click.option(
-    "--i",
-    default=0,
-    help="frame",
-    show_default=True,
-)
+@click.argument("h5", default="trajectory.h5")
+@click.option("--mask", default=None, help="atom selection", show_default=True)
+@click.option("--i", default=0, help="frame", show_default=True)
 def pdb(h5_trajectory, mask, i):
     """
-    Extract PDB of a frame
+    Extract PDB of a frame of an H5
     """
     pmd = EasyTrajH5File(h5_trajectory, atom_mask=mask).get_parmed(i_frame=i)
     pdb = Path(h5_trajectory).with_suffix(".pdb")
@@ -106,26 +82,40 @@ def pdb(h5_trajectory, mask, i):
 
 
 @h5.command()
-@click.argument("h5-trajectory", default="trajectory.h5")
-@click.argument(
-    "mask",
-    default="",
-)
-@click.option("--pdb", help="Pdb to save")
+@click.argument("h5-pdb-parmed")
+@click.argument("mask", default=None, required=False)
+@click.option("--pdb", help="Save to PDB")
 @click.option("--atom", flag_value=True, help="List all atoms")
 @click.option("--res", flag_value=True, help="List all residues")
-@click.option(
-    "--i",
-    default=0,
-    help="frame",
-    show_default=True,
-)
-def mask(h5_trajectory, mask, pdb, atom, res, i):
+@click.option("--i", default=0, help="frame", show_default=True)
+def mask(h5_pdb_parmed, mask, pdb, atom, res, i):
     """
-    Explore atoms and residues using the atom selection language
+    Explore residues/atoms of H5/PDB/PARMED using mask
     """
-    pmd = EasyTrajH5File(h5_trajectory, atom_mask=mask).get_parmed(i_frame=i)
-    i_atoms = select_mask(pmd, mask)
+    filename = Path(h5_pdb_parmed)
+    ext = filename.ext.lower()
+
+    if ext not in [".h5", ".pdb", ".parmed"]:
+        print(f"Can't recognize file extension {h5_pdb_parmed}")
+        return
+
+    if ext == ".h5":
+        pmd = EasyTrajH5File(h5_pdb_parmed).get_parmed(i_frame=i)
+    else:
+        pmd = get_parmed_from_parmed_or_pdb(h5_pdb_parmed)
+
+    if mask is None:
+        get_n_residue_of_mask(pmd, "protein")
+        get_n_residue_of_mask(pmd, "ligand")
+        get_n_residue_of_mask(pmd, "solvent")
+        get_n_residue_of_mask(pmd, "not {merge {protein} {solvent} {ligand}}")
+        return
+
+    i_atoms = select_mask(pmd, mask, is_fail_on_empty=False)
+    if not len(i_atoms):
+        print("Could select any atoms")
+        return
+
     pmd = slice_parmed(pmd, i_atoms)
     if res:
         residues = []
@@ -137,10 +127,13 @@ def mask(h5_trajectory, mask, pdb, atom, res, i):
     if atom:
         for a in pmd.atoms:
             print(a)
-    if pdb:
-        pdb = Path(pdb).with_suffix(".pdb")
-        pmd.save(pdb, overwrite=True)
-        print(f"Wrote {pdb}")
+
+    if not pdb:
+        return
+
+    pdb = Path(pdb).with_suffix(".pdb")
+    pmd.save(pdb, overwrite=True)
+    print(f"Wrote {pdb}")
 
 
 @h5.command()
@@ -158,8 +151,7 @@ def mask(h5_trajectory, mask, pdb, atom, res, i):
     show_default=True,
 )
 def merge(h5_list, prefix, mask):
-    """Merge a list of h5 files into one PREFIX.h5, a subset of atoms that exist in all files
-    can be specified with MASK"""
+    """Merge a list of H5 files"""
     traj_mananger = TrajectoryManager(paths=h5_list, atom_mask=f"{mask}")
     frames = []
     for t_id in traj_mananger.traj_file_by_i.keys():

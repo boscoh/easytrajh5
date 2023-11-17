@@ -87,7 +87,7 @@ class EasyTrajH5File(EasyH5File):
         atom_mask: str = "",
         is_dry_cache: bool = False,
     ):
-        logger.info(f"{fname=} {mode=} {atom_mask=} {is_dry_cache=}")
+        logger.info(f"EasyTrajH5File: {fname=} {mode=} {atom_mask=} {is_dry_cache=}")
         logger.info(tic("open connection"))
         super().__init__(fname, mode)
         logger.info(toc())
