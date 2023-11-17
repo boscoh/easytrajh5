@@ -35,7 +35,9 @@ atom_indices = [100, 115, 116]
 three_atom_traj = h5.read_as_traj(atom_indices=atom_indices)
 ```
 
-We provide atom selection using a new selection language (described in detail below):
+We provide atom selection using a new selection language (described in detail below).
+This is particular efficient as it only loads the atoms you want, without 
+requiring the entire trajectory to be loaded into memory:
 
 ```python
 from easytrajh5.traj import EasyTrajH5File
@@ -163,18 +165,21 @@ To save/load strings:
 
 ```python
 h5.set_str_dataset('my_string', 'a string')
+h5.flush()
 new_str = h5.get_str_dataset('my_string')
 ```
 
 To save/load json:
 ```python
 h5.set_json_dataset('my_obj', {"a", "b"})
+h5.flush()
 new_obj = h5.get_json_dataset('my_obj')
 ```
 To insert/extract binary files:
 
 ```python
 h5.insert_file_to_dataset('blob', 'blob.bin')
+h5.flush()
 h5.extract_file_from_dataset('blob', 'new_blob.bin')
 ```
 
@@ -231,7 +236,9 @@ schema of the dataset layout and attributes:
 # │   │   │   'dtype': 'float32',
 # │   │   │   'attr': {'CLASS': 'EARRAY', 'EXTDIM': 0, 'TITLE': None, 'VERSION': '1.1', 'units': 'nanometers'}
 # │   │   },
+#
 # ...
+#
 # │   │   {
 # │   │   │   'key': 'topology',
 # │   │   │   'shape': [1],
@@ -258,26 +265,105 @@ schema of the dataset layout and attributes:
 Or as a quick summary table:
 
 ```bash
-> easyh5 size examples/trajectory.h5 
-# 
-#     examples/trajectory.h5     
-# ┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┓
-# ┃ dataset         ┃ size (MB) ┃
-# ┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━┩
-# │ cell_angles     │     <1 KB │
-# │ cell_lengths    │     <1 KB │
-# │ coordinates     │   7.64 MB │
-# │ dry_atoms       │   0.03 MB │
-# │ dry_topology    │   0.18 MB │
-# │ kineticEnergy   │     <1 KB │
-# │ potentialEnergy │     <1 KB │
-# │ temperature     │     <1 KB │
-# │ time            │     <1 KB │
-# │ topology        │   0.21 MB │
-# │ total           │   8.06 MB │
-# └─────────────────┴───────────┘
+> easyh5 dataset examples/trajectory.h5 
+#Warning: importing 'simtk.openmm' is deprecated.  Import 'openmm' instead.
+
+                  sims/high_bf/trajectory.h5                  
+                                                              
+  dataset           shape              dtype       size (MB)  
+ ──────────────────────────────────────────────────────────── 
+  cell_angles       (1500, 3)          float32       0.02 MB  
+  cell_lengths      (1500, 3)          float32       0.02 MB  
+  coordinates       (1500, 25767, 3)   float32     442.32 MB  
+  kineticEnergy     (1500,)            float32         <1 KB  
+  potentialEnergy   (1500,)            float32         <1 KB  
+  temperature       (1500,)            float32         <1 KB  
+  time              (1500,)            float32         <1 KB  
+  topology          (1,)               |S2083249     1.99 MB  
+                                                              
+  total                                            444.36 MB  
 ```
 
+To get an overview of a dataset:
+
+```bash
+> easyh5 dataset examples/trajectory.h5 coordinates
+# Warning: importing 'simtk.openmm' is deprecated.  Import 'openmm' instead.
+# 
+#   examples/trajectory
+#      dataset=coordinates
+#      shape=(1500, 25767, 3)
+# 
+# [[[1.291678   7.558739   1.5199517 ]
+#   [1.368739   7.5888386  1.4620152 ]
+#   [1.2175218  7.6268845  1.5275735 ]
+#   ...
+#   [2.375777   0.09478953 4.0356894 ]
+#   [3.107005   3.3255231  2.8464174 ]
+#   [3.0329072  3.9307644  1.3600407 ]]
+# 
+#  ...
+# 
+#  [[2.9693408  7.1466036  1.4656581 ]
+#   [2.9327238  7.198606   1.3871984 ]
+#   [3.0665123  7.171176   1.4781022 ]
+#   ...
+#   [4.944392   0.56028575 4.301907  ]
+#   [2.6180382  0.3969128  1.4842175 ]
+#   [3.281546   4.9666233  2.4855924 ]]]
+```
+
+Or to focus on a selected frames, use a numbered lis:
+
+```bash
+> easyh5 dataset examples/trajectory.h5 coordinates 1,3,4-10
+# Warning: importing 'simtk.openmm' is deprecated.  Import 'openmm' instead.
+# 
+#   sims/high_bf/trajectory.h5
+#      dataset=coordinates
+#      shape=(1500, 25767, 3)
+# 
+# frames(1,3,4-10)=
+# [[[1.2958181  7.5481067  1.5513833 ]
+#   [1.2766361  7.4586782  1.5085387 ]
+#   [1.3654946  7.58469    1.4880756 ]
+#   ...
+#   [2.0149727  0.20826703 3.712016  ]
+#   [3.3603299  3.6615734  2.6487541 ]
+#   [3.1595583  4.0199933  1.509442  ]]
+# 
+#  ...
+# 
+#  [[1.2550778  7.4836254  1.5989571 ]
+#   [1.278228   7.403505   1.5419852 ]
+#   [1.2919694  7.571082   1.5644412 ]
+#   ...
+#   [2.6036768  5.9193387  3.7148886 ]
+#   [4.2752028  3.8813443  2.6205144 ]
+#   [2.343824   3.9689744  0.05281828]]]
+# 
+```
+
+To check atom selections of the protein:
+
+```bash
+> easyh5 mask sims/high_bf/trajectory.h5 "amber :PRO" --res
+# Warning: importing 'simtk.openmm' is deprecated.  Import 'openmm' instead.
+# EasyTrajH5File: fname='sims/high_bf/trajectory.h5' mode='a' atom_mask='' is_dry_cache=False
+# open connection:started...
+# open connection:finished in <1ms
+# loading topology:started...
+# loading topology:finished in 134ms
+# select_mask "amber :PRO" -> 112 atoms, 8 residues
+# <Residue PRO[7]; chain=1>
+# <Residue PRO[12]; chain=1>
+# <Residue PRO[42]; chain=1>
+# <Residue PRO[48]; chain=1>
+# <Residue PRO[50]; chain=1>
+# <Residue PRO[87]; chain=1>
+# <Residue PRO[129]; chain=1>
+# <Residue PRO[167]; chain=1>
+```
 
 ## Miscellaneous utility 
 
