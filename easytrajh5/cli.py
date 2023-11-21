@@ -5,7 +5,7 @@ import click
 import mdtraj
 from path import Path
 
-from easytrajh5.h5 import EasyH5File, print_schema, print_size, print_json
+from easytrajh5.h5 import EasyH5File
 from easytrajh5.manager import TrajectoryManager
 from easytrajh5.select import get_n_residue_of_mask, select_mask
 from easytrajh5.select import parse_number_list
@@ -29,7 +29,7 @@ def h5():
 @click.argument("h5")
 def schema(h5):
     """Examine layout of H5"""
-    print_schema(EasyH5File(h5))
+    EasyH5File(h5).print_schema()
 
 
 @h5.command()
@@ -40,21 +40,10 @@ def dataset(h5, dataset, frames):
     """Examine contents of h5"""
     f = EasyH5File(h5)
     if dataset is None:
-        print_size(f, h5)
+        f.print_dataset_table(h5)
     else:
-        d = f.get_dataset(dataset)
-        print()
-        print(f"  {h5}")
-        print(f"     dataset={dataset}")
-        print(f"     shape={d.shape}")
-        print()
-        if frames is not None:
-            print(f"frames({frames})=")
-            i_frames = parse_number_list(frames)
-            chunk = d[i_frames]
-        else:
-            chunk = d[:]
-        print(chunk)
+        print(f"\n  {h5}")
+        f.print_dataset(dataset, frames)
 
 
 @h5.command()
@@ -64,7 +53,7 @@ def json(h5, dataset):
     """
     Get JSON configs of H5
     """
-    print_json(EasyH5File(h5), dataset)
+    EasyH5File(h5).print_json(dataset)
 
 
 @h5.command()

@@ -10,7 +10,7 @@ from rich import box
 from rich.console import Console
 from rich.pretty import pprint
 from rich.table import Table
-
+from .select import parse_number_list
 
 def convert_str_to_bytes(s):
     if not isinstance(s, bytes):
@@ -209,6 +209,64 @@ class EasyH5File:
             structure.attr[key] = self.get_attr(key)
         return structure.to_dict()
 
+    def print_schema(self):
+        pprint(self.get_schema())
+
+    def print_dataset_table(self, title=None):
+        table = Table(title=title, box=box.SIMPLE)
+        table.add_column("dataset")
+        table.add_column("shape")
+        table.add_column("dtype")
+        table.add_column("size (MB)", justify="right")
+
+        def to_mb(n):
+            mb = n / 1024 ** 2
+            if mb < 0.01:
+                return "<1 KB"
+            return f"{mb:.2f} MB"
+
+        total = 0
+        for key in self.get_dataset_keys():
+            dataset = self.get_dataset(key)
+            n_byte = dataset.nbytes
+            total += n_byte
+            table.add_row(key, str(dataset.shape), str(dataset.dtype), to_mb(n_byte))
+
+        table.add_row()
+        table.add_row("total", "", "", to_mb(total))
+
+        print()
+        console = Console()
+        console.print(table)
+
+    def print_dataset(self, dataset, frames = None):
+        d = self.get_dataset(dataset)
+        print(f"     dataset={dataset}")
+        print(f"     shape={d.shape}")
+        print()
+        if frames is not None:
+            print(f"frames({frames})=")
+            i_frames = parse_number_list(frames)
+            chunk = d[i_frames]
+        else:
+            chunk = d[:]
+        print(chunk)
+
+    def print_json(self, dataset):
+        if dataset is None:
+            print("json datasets:")
+            for key in self.get_dataset_keys():
+                if key.startswith("json_"):
+                    print("  " + key)
+        else:
+            if not self.has_dataset(dataset):
+                print(f"Error, dataset '{dataset}' not found")
+            else:
+                if dataset.startswith("json_"):
+                    pprint(self.get_json_dataset(dataset))
+                else:
+                    print(f"It's an array of shape {self.get_dataset(dataset)}.shape")
+
 
 def dump_attr_to_h5(h5_fname, value, key):
     path = Path(h5_fname)
@@ -243,49 +301,3 @@ def dump_value_to_h5(h5_fname, value, key):
             create_dataset_in_h5_file_with_value(f, value, key)
 
 
-def print_schema(h5_file):
-    pprint(h5_file.get_schema())
-
-
-def print_size(h5_file, title):
-    table = Table(title=title, box=box.SIMPLE)
-    table.add_column("dataset")
-    table.add_column("shape")
-    table.add_column("dtype")
-    table.add_column("size (MB)", justify="right")
-
-    def to_mb(n):
-        mb = n / 1024**2
-        if mb < 0.01:
-            return "<1 KB"
-        return f"{mb:.2f} MB"
-
-    total = 0
-    for key in h5_file.get_dataset_keys():
-        dataset = h5_file.get_dataset(key)
-        n_byte = dataset.nbytes
-        total += n_byte
-        table.add_row(key, str(dataset.shape), str(dataset.dtype), to_mb(n_byte))
-
-    table.add_row()
-    table.add_row("total", "", "", to_mb(total))
-
-    print()
-    console = Console()
-    console.print(table)
-
-
-def print_json(h5_file, dataset):
-    if dataset is None:
-        print("json datasets:")
-        for key in h5_file.get_dataset_keys():
-            if key.startswith("json_"):
-                print("  " + key)
-    else:
-        if not h5_file.has_dataset(dataset):
-            print(f"Error, dataset '{dataset}' not found")
-        else:
-            if dataset.startswith("json_"):
-                pprint(h5_file.get_json_dataset(dataset))
-            else:
-                print(f"It's an array of shape {h5_file.get_dataset(dataset)}.shape")
