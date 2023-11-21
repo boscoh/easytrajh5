@@ -12,11 +12,18 @@ from .pdb import remove_model_lines
 
 logger = logging.getLogger(__name__)
 
-__doc__ = """
-Useful transforms for parmed.Structure, mdtraj.Trajectory, and OpenMM
 
-mdtraj, openmm: nanometers
-pdb, parmed: angstroms
+__doc__ = """
+Useful transforms for parmed.Structure, mdtraj.Trajectory, and OpenMM.
+Loads structures using convenient transforms and unit conversions.
+
+We have found that saving parmed.Structure.__getstate__() as a pickle,
+is a very efficient and fast way of saving cross-platform MD prep files.
+
+For units:
+  - mdtraj and openmm use nanometers
+  - pdb & parmed use angstroms
+
 """
 
 
@@ -34,9 +41,7 @@ def load_parmed(fname: str) -> parmed.Structure:
 
 def get_parmed_from_pdb(pdb: str) -> parmed.Structure:
     """
-    Reads pdb with some sanity checks for model lines
-
-    :param pdb: str - either .parmed or .pdb
+    Reads pdb with a sanity check for model lines that confuses parmed
     """
     suffix = Path(pdb).ext.lower()
     if not suffix == ".pdb":
@@ -111,6 +116,6 @@ def calc_residue_contacts_with_mdtraj(
 
 
 def slice_parmed(pmd: parmed.Structure, i_atoms: [int]) -> parmed.Structure:
-    # This function avoids the issue where pmd expects a bit
-    # mask for selections for full selections
+    # This function avoids the issue where parmed expects a bit
+    # mask for selections for full selections but atom indices otherwise
     return pmd if len(i_atoms) == len(pmd.atoms) else pmd[i_atoms]

@@ -24,21 +24,36 @@ _Slice = TypeVar("_Slice", bound=Sequence)
 
 class EasyTrajH5File(EasyH5File):
     """
-    Interface to read/write mdtraj h5:
-       1. Interface to read from h5 as Trajectory:
-            - get_traj
-            - get_frame_traj
-            - get_traj_with_frames
-       2. Interface to write to h5 from a backend of openmm._BaseReporter:
-            - __init__(h5, mode)
-            - @property.setter topology
-            - distance_unit
-            - flush (optional)
-            - close
-            - write
-    atom_mask - selection language for atoms
-    dry_cache - cache dry atoms for fast access without waters
+    EasyTrajH5File is an object used to process mdtraj-type
+    H5 files efficiently, using the internal indexing features
+    of H5 via the h5py library.
 
+    In particular, we provide a convenient atom selection language
+    to pre-select for atom before extracting the trajectory. This
+    is used to initialize the object, and subsequent read methods
+    will read only the selected atoms.
+
+    As well, a special dry_cache option has been implemented that
+    will store the dry topology ("not solvent") in a special cache.
+    Accessing the reduced dry topology will be particular fast, as
+    it will skip the loading of the full topology. Subsequent frame
+    reads will only reference the dry atoms.
+
+    The trajectory can be returned as:
+
+        - read_as_traj() - the whole trajectory
+        - read_frame_as_traj() - a traj with one frame
+        - read_frame_slice_as_traj() - a selection of frames
+
+    As well, the API of mdtraj.H5TrajectoryFile has been replicated,
+    and EasyTrajH5File can serve as a backend of openmm._BaseReporter:
+
+        - __init__(h5, mode)
+        - @property.setter topology
+        - distance_unit
+        - flush (optional)
+        - close
+        - write
     """
 
     # nanometers
@@ -393,6 +408,7 @@ class EasyTrajH5File(EasyH5File):
         logger.info(tic("writing coordinates"))
         frames_by_key = {}
         for field in self.fields:
+            # trick to read the args by their string name
             frames = locals().get(field.key)
             if frames is not None:
                 frames_by_key[field.key] = ensure_type(

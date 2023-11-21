@@ -1,5 +1,6 @@
 import json
 import re
+from typing import Union, KeysView, Any
 
 import h5py
 import numpy
@@ -10,7 +11,9 @@ from rich import box
 from rich.console import Console
 from rich.pretty import pprint
 from rich.table import Table
+
 from .select import parse_number_list
+
 
 def convert_str_to_bytes(s):
     if not isinstance(s, bytes):
@@ -18,7 +21,7 @@ def convert_str_to_bytes(s):
     return s
 
 
-def convert_bytes_to_str(b):
+def convert_bytes_to_str(b: Union[numpy.bytes_, bytes, str]):
     if isinstance(b, numpy.bytes_):
         b = b.tobytes()
     if not isinstance(b, str):
@@ -28,12 +31,19 @@ def convert_bytes_to_str(b):
 
 class EasyH5File:
     """
-    Convenience class to make H5 easy use for the following use-cases:
-        - fixed numpy arrays
-        - appendable chunked arrays
-        - very long strings
-        - JSON-compatible object literals
-        - attributes
+    EasyH5File is a convenience class to make h5py.File objects
+    easier to use for the following use-cases:
+
+        - easily create and add to fixed/extendable numpy arrays
+        - add strings as byte column dataset
+        - add JSON-compatible object literals
+        - add binary blobs; which allows insertion of binary files
+        - handle attributes/dataset access using method-based lookups
+        - add diagnostics such as JSON schema and print function
+
+    The h5py.File is stored as self.handle.
+
+    Note: remember to .flush() or .close() object to force write
     """
 
     def __init__(self, fname, mode="a"):
@@ -62,10 +72,10 @@ class EasyH5File:
     def __del__(self):
         self.close()
 
-    def has_dataset(self, key):
+    def has_dataset(self, key) -> bool:
         return key in self.handle
 
-    def get_dataset_keys(self):
+    def get_dataset_keys(self) -> [str]:
         def get_node_keys(node_key=None):
             result = []
             if node_key is None:
@@ -93,7 +103,7 @@ class EasyH5File:
         if key in self.handle:
             del self.handle[key]
 
-    def get_dataset(self, key):
+    def get_dataset(self, key) -> h5py.Dataset:
         return self.handle[key]
 
     def delete_dataset(self, key):
@@ -130,7 +140,7 @@ class EasyH5File:
         self.clear_dataset(key)
         self.handle.create_dataset(key, data=numpy.array([blob]))
 
-    def get_bytes_dataset(self, key):
+    def get_bytes_dataset(self, key) -> bytes:
         return self.get_dataset(key)[0].tobytes()
 
     def insert_file_to_dataset(self, key, fname):
@@ -146,25 +156,26 @@ class EasyH5File:
     def set_str_dataset(self, key, s):
         self.set_bytes_dataset(key, convert_str_to_bytes(s))
 
-    def get_str_dataset(self, key):
+    def get_str_dataset(self, key) -> str:
         return convert_bytes_to_str(self.get_bytes_dataset(key))
 
     def set_json_dataset(self, key, obj):
         self.set_str_dataset(key, json.dumps(obj, default=str))
 
-    def get_json_dataset(self, key):
+    def get_json_dataset(self, key) -> Any:
         return json.loads(self.get_str_dataset(key))
 
-    def get_attrs(self, dataset_key=None):
+    def get_attrs(self, dataset_key=None) -> h5py.AttributeManager:
+        """Returns h5py attrs object"""
         return self.get_dataset(dataset_key).attrs if dataset_key else self.handle.attrs
 
-    def get_attr_keys(self, dataset_key=None):
+    def get_attr_keys(self, dataset_key=None) -> KeysView:
         return self.get_attrs(dataset_key).keys()
 
-    def has_attr(self, key, dataset_key=None):
+    def has_attr(self, key, dataset_key=None) -> bool:
         return key in self.get_attrs(dataset_key)
 
-    def get_attr(self, key, dataset_key=None):
+    def get_attr(self, key, dataset_key=None) -> Any:
         attrs = self.get_attrs(dataset_key)
         v = attrs[key]
         if isinstance(v, numpy.bytes_):
@@ -184,7 +195,7 @@ class EasyH5File:
         else:
             attrs.create(key, value)
 
-    def get_dataset_schema(self, key):
+    def get_dataset_schema(self, key) -> Dict:
         dataset = self.get_dataset(key)
         config = Dict(key=key)
         config.shape = list(dataset.shape)
@@ -201,7 +212,7 @@ class EasyH5File:
             config.attr[attr_key] = self.get_attr(attr_key, key)
         return config
 
-    def get_schema(self):
+    def get_schema(self) -> Dict:
         structure = Dict(datasets=[])
         for key in self.get_dataset_keys():
             structure.datasets.append(self.get_dataset_schema(key))
@@ -220,7 +231,7 @@ class EasyH5File:
         table.add_column("size (MB)", justify="right")
 
         def to_mb(n):
-            mb = n / 1024 ** 2
+            mb = n / 1024**2
             if mb < 0.01:
                 return "<1 KB"
             return f"{mb:.2f} MB"
@@ -239,7 +250,7 @@ class EasyH5File:
         console = Console()
         console.print(table)
 
-    def print_dataset(self, dataset, frames = None):
+    def print_dataset(self, dataset, frames=None):
         d = self.get_dataset(dataset)
         print(f"     dataset={dataset}")
         print(f"     shape={d.shape}")
@@ -286,6 +297,12 @@ def create_dataset_in_h5_file_with_value(h5_file, value, key):
 
 
 def dump_value_to_h5(h5_fname, value, key):
+    """
+    Convenience function to quickly append values to a dataset to an h5 file.
+    The file will be created if it doesn't exist. Similarly, with the dataset.
+    The file will be opened and then closed so that there are no dangling
+    handles.
+    """
     path = Path(h5_fname)
 
     if path.isfile():  # if the h5 exist
@@ -299,5 +316,3 @@ def dump_value_to_h5(h5_fname, value, key):
     else:
         with h5py.File(path, "w") as f:
             create_dataset_in_h5_file_with_value(f, value, key)
-
-

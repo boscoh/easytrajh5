@@ -8,7 +8,6 @@ from path import Path
 from easytrajh5.h5 import EasyH5File
 from easytrajh5.manager import TrajectoryManager
 from easytrajh5.select import get_n_residue_of_mask, select_mask
-from easytrajh5.select import parse_number_list
 from easytrajh5.struct import slice_parmed, get_parmed_from_parmed_or_pdb
 from easytrajh5.traj import EasyTrajH5File
 
@@ -39,10 +38,11 @@ def schema(h5):
 def dataset(h5, dataset, frames):
     """Examine contents of h5"""
     f = EasyH5File(h5)
+    title = h5
     if dataset is None:
-        f.print_dataset_table(h5)
+        f.print_dataset_table(title)
     else:
-        print(f"\n  {h5}")
+        print(f"\n  {title}")
         f.print_dataset(dataset, frames)
 
 
@@ -64,8 +64,8 @@ def pdb(h5_trajectory, mask, i):
     """
     Extract PDB of a frame of an H5
     """
-    pmd = EasyTrajH5File(h5_trajectory, atom_mask=mask).get_parmed(i_frame=i)
     pdb = Path(h5_trajectory).with_suffix(".pdb")
+    pmd = EasyTrajH5File(h5_trajectory, atom_mask=mask).get_parmed(i_frame=i)
     pmd.save(pdb, overwrite=True)
     print(f"Wrote {pdb=} {i=} {mask=}")
 
