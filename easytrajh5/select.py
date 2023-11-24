@@ -8,7 +8,11 @@ from parmed.amber import AmberMask
 from path import Path
 
 from .fs import load_yaml
-from .struct import get_mdtraj_from_parmed, calc_residue_contacts_with_mdtraj, slice_parmed
+from .struct import (
+    get_mdtraj_from_parmed,
+    calc_residue_contacts_with_mdtraj,
+    slice_parmed,
+)
 
 logger = logging.getLogger(__name__)
 data_dir = Path(__file__).parent / "data"
@@ -58,7 +62,7 @@ def select_mask(pmd, mask, is_fail_on_empty=True):
     :parmam parmed_structure: parmed.Structure
     :param mask: Union[str, List[int]]
 
-    :return: [int] - list of atom indices to pmd
+    :return: [int] - sorted list of atom indices to pmd
     """
 
     def get_i_atoms_of_ast(ast):
@@ -357,3 +361,7 @@ def get_n_residue_of_mask(pmd: parmed.Structure, mask: str):
     for a in slice_parmed(pmd, i_atoms):
         residues[a.residue.idx] = 1
     return residues.sum()
+
+
+def slice_parmed_with_mask(pmd, mask):
+    return slice_parmed(pmd, select_mask(pmd, mask))

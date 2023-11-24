@@ -41,6 +41,10 @@ class EasyH5File:
         - handle attributes/dataset access using method-based lookups
         - add diagnostics such as JSON schema and print function
 
+    More importantly, this object allows the internal handle type
+    of h5py.File to be easily overrideable with h5pyd.File for
+    processing with an HSDS data server.
+
     The h5py.File is stored as self.handle.
 
     Note: remember to .flush() or .close() object to force write
@@ -53,6 +57,10 @@ class EasyH5File:
         self.is_open = True
 
     def open(self, fname, mode):
+        # We use this method to open the h5py object
+        # to allow this method to be overriable
+        # with a reference to h5pyd for remote
+        # access with an HSDS server
         return h5py.File(fname, mode)
 
     def flush(self):
@@ -250,33 +258,51 @@ class EasyH5File:
         console = Console()
         console.print(table)
 
-    def print_dataset(self, dataset, frames=None):
-        d = self.get_dataset(dataset)
-        print(f"     dataset={dataset}")
-        print(f"     shape={d.shape}")
-        print()
-        if frames is not None:
-            print(f"frames({frames})=")
-            i_frames = parse_number_list(frames)
-            chunk = d[i_frames]
-        else:
-            chunk = d[:]
-        print(chunk)
+    def print_dataset(self, key, frames=None, is_json=True):
+        dataset = self.get_dataset(key)
+        dtype = str(dataset.dtype)
 
-    def print_json(self, dataset):
-        if dataset is None:
-            print("json datasets:")
-            for key in self.get_dataset_keys():
-                if key.startswith("json_"):
-                    print("  " + key)
-        else:
-            if not self.has_dataset(dataset):
-                print(f"Error, dataset '{dataset}' not found")
+        print(f"     dataset={key}")
+        print(f"     dtype={dtype}")
+
+        is_string = re.search(r"\|S\d+", dtype)
+        if is_string:
+            str_len = int(dtype[2:])
+            print()
+            if is_json:
+                print("---- JSON --------------------")
+                pprint(self.get_json_dataset(key))
             else:
-                if dataset.startswith("json_"):
-                    pprint(self.get_json_dataset(dataset))
-                else:
-                    print(f"It's an array of shape {self.get_dataset(dataset)}.shape")
+                b = self.get_bytes_dataset(key)
+                try:
+                    s = convert_bytes_to_str(b)
+                    print("---- STRING --------------------")
+                    if str_len > 2000:
+                        print(s[:1000])
+                        print("\n....\n")
+                        print(s[-1000:])
+                    else:
+                        print(s)
+                except Exception:
+                    import sys
+
+                    print("---- BYTES --------------------")
+                    if str_len > 2000:
+                        sys.stdout.buffer.write(b[:1000])
+                        print("\n....")
+                        sys.stdout.buffer.write(b[-1000:])
+                    else:
+                        sys.stdout.buffer.write(b)
+        else:
+            print(f"     shape={dataset.shape}")
+            print()
+            if frames is not None:
+                print(f"frames({frames})=")
+                i_frames = parse_number_list(frames)
+                chunk = dataset[i_frames]
+            else:
+                chunk = dataset[:]
+            print(chunk)
 
 
 def dump_attr_to_h5(h5_fname, value, key):

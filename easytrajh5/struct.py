@@ -12,7 +12,6 @@ from .pdb import remove_model_lines
 
 logger = logging.getLogger(__name__)
 
-
 __doc__ = """
 Useful transforms for parmed.Structure, mdtraj.Trajectory, and OpenMM.
 Loads structures using convenient transforms and unit conversions.
@@ -33,9 +32,16 @@ def dump_parmed(pmd: parmed.Structure, fname: str):
 
 
 def load_parmed(fname: str) -> parmed.Structure:
+    from packaging import version
+    from parmed.topologyobjects import TrackedList
+
     with open(fname, "rb") as handle:
+        state = pickle.load(file=handle)
+        if version.parse(parmed.__version__) > version.parse("3.4.3"):
+            if "links" not in state:
+                state["links"] = TrackedList()
         pmd = parmed.structure.Structure()
-        pmd.__setstate__(pickle.load(file=handle))
+        pmd.__setstate__(state)
     return pmd
 
 

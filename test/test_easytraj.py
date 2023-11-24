@@ -22,15 +22,15 @@ def test_file_insertion():
 
 def test_get_parmed():
     h5 = this_dir / "aaa_trajectory.h5"
-    pmd = EasyTrajH5File(h5).get_parmed()
+    pmd = EasyTrajH5File(h5).get_topology_parmed()
     n_solvent = get_n_residue_of_mask(pmd, "solvent")
     assert n_solvent > 0
 
-    pmd = EasyTrajH5File(h5, atom_mask="not {solvent}").get_parmed()
+    pmd = EasyTrajH5File(h5, atom_mask="not {solvent}").get_topology_parmed()
     n_solvent = get_n_residue_of_mask(pmd, "solvent")
     assert n_solvent == 0
 
-    pmd = EasyTrajH5File(h5, atom_mask="mdtraj name CA").get_parmed()
+    pmd = EasyTrajH5File(h5, atom_mask="mdtraj name CA").get_topology_parmed()
     assert len(pmd.atoms) == 3
 
 def test_blobs():

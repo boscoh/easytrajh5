@@ -5,6 +5,7 @@ import click
 import mdtraj
 from path import Path
 
+import easytrajh5.show
 from easytrajh5.h5 import EasyH5File
 from easytrajh5.manager import TrajectoryManager
 from easytrajh5.select import get_n_residue_of_mask, select_mask
@@ -24,18 +25,21 @@ def h5():
     pass
 
 
-@h5.command()
+@h5.command(no_args_is_help=True)
 @click.argument("h5")
 def schema(h5):
     """Examine layout of H5"""
     EasyH5File(h5).print_schema()
 
 
-@h5.command()
+@h5.command(no_args_is_help=True)
 @click.argument("h5")
 @click.argument("dataset", default=None, required=False)
-@click.argument("frames", default=None, required=False)
-def dataset(h5, dataset, frames):
+@click.option(
+    "--frames", default=None, help="list of frames e.g. '1,2,3-10,11,200-211'"
+)
+@click.option("--json", is_flag=True, default=False, help="Format json")
+def dataset(h5, dataset, frames, json):
     """Examine contents of h5"""
     f = EasyH5File(h5)
     title = h5
@@ -43,40 +47,30 @@ def dataset(h5, dataset, frames):
         f.print_dataset_table(title)
     else:
         print(f"\n  {title}")
-        f.print_dataset(dataset, frames)
+        f.print_dataset(dataset, frames=frames, is_json=json)
 
 
-@h5.command()
-@click.argument("h5")
-@click.argument("dataset", required=False)
-def json(h5, dataset):
-    """
-    Get JSON configs of H5
-    """
-    EasyH5File(h5).print_json(dataset)
-
-
-@h5.command()
+@h5.command(no_args_is_help=True)
 @click.argument("h5", default="trajectory.h5")
 @click.option("--mask", default=None, help="atom selection", show_default=True)
-@click.option("--i", default=0, help="frame", show_default=True)
+@click.option("--i", "-i", default=0, help="frame", show_default=True)
 def pdb(h5_trajectory, mask, i):
     """
     Extract PDB of a frame of an H5
     """
     pdb = Path(h5_trajectory).with_suffix(".pdb")
-    pmd = EasyTrajH5File(h5_trajectory, atom_mask=mask).get_parmed(i_frame=i)
+    pmd = EasyTrajH5File(h5_trajectory, atom_mask=mask).get_topology_parmed(i_frame=i)
     pmd.save(pdb, overwrite=True)
     print(f"Wrote {pdb=} {i=} {mask=}")
 
 
-@h5.command()
+@h5.command(no_args_is_help=True)
 @click.argument("h5-pdb-parmed")
 @click.argument("mask", default=None, required=False)
 @click.option("--pdb", help="Save to PDB")
 @click.option("--atom", flag_value=True, help="List all atoms")
 @click.option("--res", flag_value=True, help="List all residues")
-@click.option("--i", default=0, help="frame", show_default=True)
+@click.option("--i", "-i", default=0, help="frame", show_default=True)
 def mask(h5_pdb_parmed, mask, pdb, atom, res, i):
     """
     Explore residues/atoms of H5/PDB/PARMED using mask
@@ -89,7 +83,7 @@ def mask(h5_pdb_parmed, mask, pdb, atom, res, i):
         return
 
     if ext == ".h5":
-        pmd = EasyTrajH5File(h5_pdb_parmed).get_parmed(i_frame=i)
+        pmd = EasyTrajH5File(h5_pdb_parmed).get_topology_parmed(i_frame=i)
     else:
         pmd = get_parmed_from_parmed_or_pdb(h5_pdb_parmed)
 
@@ -125,7 +119,7 @@ def mask(h5_pdb_parmed, mask, pdb, atom, res, i):
     print(f"Wrote {pdb}")
 
 
-@h5.command()
+@h5.command(no_args_is_help=True)
 @click.argument("h5_list", nargs=-1)
 @click.option(
     "--prefix",
@@ -141,15 +135,93 @@ def mask(h5_pdb_parmed, mask, pdb, atom, res, i):
 )
 def merge(h5_list, prefix, mask):
     """Merge a list of H5 files"""
-    traj_mananger = TrajectoryManager(paths=h5_list, atom_mask=f"{mask}")
+    traj_mananger = TrajectoryManager(paths=h5_list, atom_mask=mask)
     frames = []
-    for t_id in traj_mananger.traj_file_by_i.keys():
-        for f_id in range(0, traj_mananger.get_n_frame(t_id)):
-            frames.append(traj_mananger.read_as_frame_traj((f_id, t_id)))
-    frames = mdtraj.join(frames)
-    fname = Path(prefix).with_suffix(".h5")
-    print(f"Merged {h5_list} --> {fname}")
-    frames.save_hdf5(fname)
+    for i_traj in traj_mananger.traj_file_by_i.keys():
+        for i_frame in range(0, traj_mananger.get_n_frame(i_traj)):
+            frames.append(traj_mananger.read_as_frame_traj((i_frame, i_traj)))
+    full_traj = mdtraj.join(frames)
+    full_traj_h5 = Path(prefix).with_suffix(".h5")
+    print(f"Merged {h5_list} --> {full_traj_h5}")
+    full_traj.save_hdf5(full_traj_h5)
+
+
+@h5.command(no_args_is_help=True)
+@click.argument("filename")
+@click.argument("mask", required=False)
+@click.argument("mask2", required=False)
+@click.option("-s", "--sphere", is_flag=True, help="Show all atoms as spheres")
+@click.option("-t", "--stick", is_flag=True, help="Show all bonds as stick")
+@click.option(
+    "-k",
+    "--keep-solvent",
+    is_flag=True,
+    default=False,
+    show_default=True,
+    help="Keep solvent",
+)
+def show_pymol(filename, mask, mask2, sphere, stick, keep_solvent):
+    """
+    Use PYMOL to show H5/PDB/PARMED with mask
+
+    \b
+    Default: no solvent
+    Optional two masks (green/purple). Atom mask selections, see:
+      https://github.com/redesignScience/easytrajh5#atom-selection-language
+    """
+    easytrajh5.show.pymol(**locals())
+
+
+@h5.command(no_args_is_help=True)
+@click.argument("filename")
+@click.argument("parmed")
+@click.argument("mask", required=False)
+@click.argument("mask2", required=False)
+@click.option("-s", "--sphere", is_flag=True, help="Show all atoms as spheres")
+@click.option("-t", "--stick", is_flag=True, help="Show all atoms as sticks")
+@click.option(
+    "-k",
+    "--keep-solvent",
+    is_flag=True,
+    default=False,
+    show_default=True,
+    help="Keep solvent",
+)
+def show_chimera(filename, parmed, mask, mask2, sphere, stick, keep_solvent):
+    """
+    Use CHIMERA to show H5/PDB/PARMED with mask, needs PARMED
+
+    \b
+    Default: no solvent
+    Optional two masks (green/purple). Atom mask selections, see:
+      https://github.com/redesignScience/easytrajh5#atom-selection-language
+    """
+    easytrajh5.show.chimera(**locals())
+
+
+@h5.command(no_args_is_help=True)
+@click.argument("filename")
+@click.argument("mask", required=False)
+@click.argument("mask2", required=False)
+@click.option("-s", "--sphere", is_flag=True, help="Show all atoms as spheres")
+@click.option(
+    "-k",
+    "--keep-solvent",
+    is_flag=True,
+    default=False,
+    show_default=True,
+    help="Keep solvent",
+)
+def show_vmd(filename, mask, mask2, sphere, keep_solvent):
+    """
+    Use VMD to show H5/PDB/PARMED with mask
+
+    \b
+    Default: no solvent
+    Optional two masks (green/purple). Atom mask selections, see:
+      https://github.com/redesignScience/easytrajh5#atom-selection-language
+    """
+    easytrajh5.show.vmd(**locals())
 
 
 if __name__ == "__main__":

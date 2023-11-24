@@ -1,13 +1,17 @@
 import logging
 import operator
+import pickle
+from collections import namedtuple
 from typing import TypeVar, Sequence
 
 import numpy
+import parmed
 from addict import Dict
-from mdtraj import Topology, Trajectory, load
+from mdtraj import Topology, Trajectory
 from mdtraj.core import element as elem
 from mdtraj.reporters.basereporter import _BaseReporter
 from mdtraj.utils import ensure_type, in_units_of
+from mdtraj.utils.unitcell import lengths_and_angles_to_box_vectors
 from path import Path
 
 from easytrajh5.fs import load_yaml, dump_yaml
@@ -24,20 +28,20 @@ _Slice = TypeVar("_Slice", bound=Sequence)
 
 class EasyTrajH5File(EasyH5File):
     """
-    EasyTrajH5File is an object used to process mdtraj-type
+    EasyTrajH5File is an object used to conviently process mdtraj-type
     H5 files efficiently, using the internal indexing features
     of H5 via the h5py library.
 
     In particular, we provide a convenient atom selection language
-    to pre-select for atom before extracting the trajectory. This
-    is used to initialize the object, and subsequent read methods
-    will read only the selected atoms.
+    to pre-select for atoms before extracting the trajectory. This
+    is used to initialize the object via the topology, and subsequent
+    read methods will read only the selected atoms.
 
     As well, a special dry_cache option has been implemented that
-    will store the dry topology ("not solvent") in a special cache.
-    Accessing the reduced dry topology will be particular fast, as
-    it will skip the loading of the full topology. Subsequent frame
-    reads will only reference the dry atoms.
+    will store the dry topology ("not solvent") in a special cache
+    inside the H5 file.  Accessing the reduced dry topology will be
+    fast, as the H5 can skip the loading of the full topology.
+    Subsequent frame reads will only reference the dry atoms.
 
     The trajectory can be returned as:
 
@@ -45,7 +49,7 @@ class EasyTrajH5File(EasyH5File):
         - read_frame_as_traj() - a traj with one frame
         - read_frame_slice_as_traj() - a selection of frames
 
-    As well, the API of mdtraj.H5TrajectoryFile has been replicated,
+    As well, the API of mdtraj.formats.H5TrajectoryFile has been replicated,
     and EasyTrajH5File can serve as a backend of openmm._BaseReporter:
 
         - __init__(h5, mode)
@@ -53,9 +57,11 @@ class EasyTrajH5File(EasyH5File):
         - distance_unit
         - flush (optional)
         - close
+        - read
         - write
     """
 
+    # Compatibility with mdtraj.formats.hdf5.H5TrajectoryFile.read
     # nanometers
     distance_unit = Trajectory._distance_unit
 
@@ -102,7 +108,7 @@ class EasyTrajH5File(EasyH5File):
         atom_mask: str = "",
         is_dry_cache: bool = False,
     ):
-        logger.info(f"EasyTrajH5File: {fname=} {mode=} {atom_mask=} {is_dry_cache=}")
+        logger.info(f"{self.__class__.__name__}: {fname=} {mode=} {atom_mask=} {is_dry_cache=}")
         logger.info(tic("open connection"))
         super().__init__(fname, mode)
         logger.info(toc())
@@ -209,7 +215,7 @@ class EasyTrajH5File(EasyH5File):
 
         return dry_atom_indices
 
-    def get_parmed(self, i_frame=0):
+    def get_topology_parmed(self, i_frame=0):
         positions_angstroms = self.get_dataset("coordinates")[i_frame] * 10
         if self.atom_indices is None:
             mdtraj_topology = self.topology
@@ -218,6 +224,25 @@ class EasyTrajH5File(EasyH5File):
             mdtraj_topology = self.fetch_topology(self.atom_indices)
             positions_angstroms = positions_angstroms[self.atom_indices]
         return get_parmed_from_openmm(mdtraj_topology.to_openmm(), positions_angstroms)
+
+    def get_parmed_from_dataset(self, i_frame=None):
+        if not self.has_dataset("parmed"):
+            return None
+
+        pmd = parmed.Structure()
+        blob = self.get_bytes_dataset("parmed")
+        pmd.__setstate__(pickle.loads(blob))
+
+        if i_frame is not None:
+            coordinates = self.get_dataset("coordinates")
+            if i_frame < 0:
+                i_frame = coordinates.shape[0] + i_frame
+            pmd.positions = coordinates[i_frame] * 10.0
+            box_vectors = self.read_parmed_box_vectors(i_frame)
+            if box_vectors is not None:
+                pmd.box_vectors = box_vectors
+
+        return pmd
 
     def slice_topology(self, atom_mask: str) -> (Topology, [int]):
         logger.info(tic("building parmed"))
@@ -247,6 +272,7 @@ class EasyTrajH5File(EasyH5File):
 
     @topology.setter
     def topology(self, topology):
+        """Compatibility with mdtraj.formats.hdf5.H5TrajectoryFile.topology="""
         self._topology = topology
         self.set_json_dataset("topology", get_dict_from_mdtraj_topology(topology))
         self.handle.flush()
@@ -260,7 +286,7 @@ class EasyTrajH5File(EasyH5File):
     def read_atom_dataset_progressively(
         self, key, frame_slice, atom_indices=slice(None)
     ) -> numpy.ndarray:
-        """Returns numpy.ndarrary[float] of [n_frame x n_atom x 3]"""
+        """Returns numpy.ndarrary[float] of [n_frame x <shape of frame of dataset>]"""
 
         stride = frame_slice.step or 1
         start = frame_slice.start or 0
@@ -308,6 +334,46 @@ class EasyTrajH5File(EasyH5File):
                 break
 
         return result
+
+    def read(self, n_frames=None, stride=None, atom_indices=None) -> namedtuple:
+        """
+        Compatibility with mdtraj.formats.hdf5.H5TrajectoryFile.read
+
+        :returns namedtuple:
+             The returned namedtuple will have the fields "coordinates", "time", "cell_lengths",
+             "cell_angles", "velocities", "kineticEnergy", "potentialEnergy",
+             "temperature" and "alchemicalLambda". Each of the fields in the
+             returned namedtuple will either be a numpy array or None, dependening
+             on if that data was saved in the trajectory. All of the data shall be
+             n units of "nanometers", "picoseconds", "kelvin", "degrees" and
+             "kilojoules_per_mole".
+        """
+        if n_frames is None:
+            n_frames = numpy.inf
+        if stride is not None:
+            stride = int(stride)
+
+        total_n_frames = self.get_n_frame()
+        frame_slice = slice(0, min(n_frames, total_n_frames), stride)
+        if frame_slice.stop - frame_slice.start == 0:
+            return []
+
+        if atom_indices is None:
+            # get all the atoms
+            atom_indices = slice(None)
+        # TODO: check atom_indices for type and fit to n_frames
+
+        keys = [field["key"] for field in self.fields]
+        Frames = namedtuple("Frames", keys)
+        kwargs = {}
+        for key in keys:
+            if self.has_dataset(key):
+                kwargs[key] = self.read_atom_dataset_progressively(
+                    key, frame_slice, atom_indices
+                )
+            else:
+                kwargs[key] = None
+        return Frames(**kwargs)
 
     def read_frame_slice_as_traj(
         self, frame_slice, atom_indices, coordinates_only=False
@@ -378,6 +444,26 @@ class EasyTrajH5File(EasyH5File):
 
         return frame
 
+    def read_parmed_box_vectors(self, i_frame):
+        """
+        :return: iterable of 3, each 3-element tuple of unit cell vectors in angstroms
+
+        """
+        if not self.has_dataset("cell_lengths") or not self.has_dataset("cell_angles"):
+            return None
+        these_cell_lengths = self.get_dataset("cell_lengths")[i_frame]
+        these_cell_angles = self.get_dataset("cell_angles")[i_frame]
+        v1, v2, v3 = lengths_and_angles_to_box_vectors(
+            these_cell_lengths[0],  # a
+            these_cell_lengths[1],  # b
+            these_cell_lengths[2],  # c
+            these_cell_angles[0],  # alpha
+            these_cell_angles[1],  # beta
+            these_cell_angles[2],  # gamma
+        )
+        unitcell_vectors = numpy.swapaxes(numpy.dstack((v1, v2, v3)), 1, 2) * 10
+        return unitcell_vectors[0]
+
     def write_header(self, n_atoms, keys):
         for k, v in self.default_attrs.items():
             self.set_attr(k, v)
@@ -405,6 +491,9 @@ class EasyTrajH5File(EasyH5File):
         temperature=None,
         alchemicalLambda=None,
     ):
+        """
+        Compatibility with mdtraj.formats.hdf5.H5TrajectoryFile.write
+        """
         logger.info(tic("writing coordinates"))
         frames_by_key = {}
         for field in self.fields:
@@ -538,7 +627,9 @@ def convert_h5_to_dcd_and_pdb(h5_fname, is_solvent=True):
 
     if is_convert:
         logger.info(f"Loading {h5_fname}")
-        traj = load(h5_fname)
+
+        mask = "not {solvent}" if not is_solvent else ""
+        traj = EasyTrajH5File(h5_fname, atom_mask=mask).read_as_traj()
 
         try:
             logger.info("Imaging frames")
@@ -551,10 +642,6 @@ def convert_h5_to_dcd_and_pdb(h5_fname, is_solvent=True):
             traj = traj.superpose(traj[0], atom_indices=traj.top.select("protein"))
         except Exception:
             logger.error("Failed to align")
-
-        if not is_solvent:
-            logger.info(f"Removing solvent {is_solvent}")
-            traj = traj.remove_solvent()
 
         logger.info("Centering")
         traj.center_coordinates()

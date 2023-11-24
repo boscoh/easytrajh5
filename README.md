@@ -136,8 +136,8 @@ objects:
 from easytrajh5.traj import EasyTrajH5File
 from easytrajh5.select import select_mask
 from easytrajh5.struct import slice_parmed
- 
-pmd = EasyTrajH5File("traj.h5").get_parmed()
+
+pmd = EasyTrajH5File("traj.h5").get_topology_parmed()
 i_atoms = select_mask(pmd, "not {solvent}")
 sliced_pmd = slice_parmed(pmd, i_atoms)
 ```

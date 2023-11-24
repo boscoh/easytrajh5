@@ -12,6 +12,7 @@ easyh5 = 'easytrajh5.cli:h5'
 [tool.poetry.dependencies]
 python = "^3.9"
 addict = "*"
+appdirs = "*"
 click = "*"
 deepdiff = "*"
 h5py = "*"
