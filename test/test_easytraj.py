@@ -1,4 +1,5 @@
 import filecmp
+import importlib.util
 
 from mdtraj import load_hdf5
 from path import Path
@@ -33,6 +34,7 @@ def test_get_parmed():
     pmd = EasyTrajH5File(h5, atom_mask="mdtraj name CA").get_topology_parmed()
     assert len(pmd.atoms) == 3
 
+
 def test_blobs():
     with open(parmed, "rb") as f:
         blob = f.read()
@@ -55,9 +57,11 @@ def test_json():
 
 
 def test_easyh5_compatible_with_mdtraj():
-    mdtraj_traj = load_hdf5(h5)
-    easy_traj = EasyTrajH5File(h5).read_as_traj()
-    assert mdtraj_traj == easy_traj
+    pytables_spec = importlib.util.find_spec("pytables")
+    if pytables_spec is not None:
+        mdtraj_traj = load_hdf5(h5)
+        easy_traj = EasyTrajH5File(h5).read_as_traj()
+        assert mdtraj_traj == easy_traj
 
 
 def test_read_write_easyh5():
