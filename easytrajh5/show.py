@@ -9,7 +9,7 @@ from path import Path
 from easytrajh5.binary import get_binary
 from easytrajh5.select import select_mask, slice_parmed_with_mask
 from easytrajh5.struct import get_parmed_from_parmed_or_pdb
-from easytrajh5.struct import load_parmed, slice_parmed
+from easytrajh5.struct import load_parmed, slice_parmed, get_mdtraj_topology_from_pmd
 from easytrajh5.traj import convert_h5_to_dcd_and_pdb
 
 logger = logging.getLogger(__name__)
@@ -188,7 +188,7 @@ def chimera(filename, parmed, mask, mask2, sphere, stick, keep_solvent):
     if mask:
         i_atoms = select_mask(pmd, mask)
         atoms = []
-        top = mdtraj.Topology.from_openmm(pmd.topology)
+        top = get_mdtraj_topology_from_pmd(pmd)
         for r in top.residues:
             names = [a.name for a in r.atoms if a.index in i_atoms]
             if len(names):
@@ -197,7 +197,7 @@ def chimera(filename, parmed, mask, mask2, sphere, stick, keep_solvent):
     if mask2:
         i_atoms = select_mask(pmd, mask2)
         atoms = []
-        top = mdtraj.Topology.from_openmm(pmd.topology)
+        top = get_mdtraj_topology_from_pmd(pmd)
         for r in top.residues:
             names = [a.name for a in r.atoms if a.index in i_atoms]
             if len(names):

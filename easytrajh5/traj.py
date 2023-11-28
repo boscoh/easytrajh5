@@ -19,7 +19,11 @@ from easytrajh5.pdb import remove_model_lines
 from .fs import tic, toc
 from .h5 import EasyH5File
 from .select import select_mask
-from .struct import get_parmed_from_openmm, slice_parmed
+from .struct import (
+    slice_parmed,
+    get_parmed_from_mdtraj_topology_and_positions,
+    get_mdtraj_topology_from_pmd,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +112,9 @@ class EasyTrajH5File(EasyH5File):
         atom_mask: str = "",
         is_dry_cache: bool = False,
     ):
-        logger.info(f"{self.__class__.__name__}: {fname=} {mode=} {atom_mask=} {is_dry_cache=}")
+        logger.info(
+            f"{self.__class__.__name__}: {fname=} {mode=} {atom_mask=} {is_dry_cache=}"
+        )
         logger.info(tic("open connection"))
         super().__init__(fname, mode)
         logger.info(toc())
@@ -223,7 +229,9 @@ class EasyTrajH5File(EasyH5File):
             logger.info("Select atom_mask")
             mdtraj_topology = self.fetch_topology(self.atom_indices)
             positions_angstroms = positions_angstroms[self.atom_indices]
-        return get_parmed_from_openmm(mdtraj_topology.to_openmm(), positions_angstroms)
+        return get_parmed_from_mdtraj_topology_and_positions(
+            mdtraj_topology, positions_angstroms
+        )
 
     def get_parmed_from_dataset(self, i_frame=None):
         if not self.has_dataset("parmed"):
@@ -242,12 +250,17 @@ class EasyTrajH5File(EasyH5File):
             if box_vectors is not None:
                 pmd.box_vectors = box_vectors
 
+        if self.atom_indices is not None:
+            pmd = slice_parmed(pmd, self.atom_indices)
+
         return pmd
 
     def slice_topology(self, atom_mask: str) -> (Topology, [int]):
         logger.info(tic("building parmed"))
         positions_angstroms = self.get_dataset("coordinates")[0] * 10
-        pmd = get_parmed_from_openmm(self.topology.to_openmm(), positions_angstroms)
+        pmd = get_parmed_from_mdtraj_topology_and_positions(
+            self.topology, positions_angstroms
+        )
         logger.info(toc())
 
         logger.info(tic("select mask"))
@@ -259,7 +272,7 @@ class EasyTrajH5File(EasyH5File):
         logger.info(toc())
 
         logger.info(tic("converting to mdtraj topology"))
-        sliced_top = Topology.from_openmm(sliced_pmd.topology)
+        sliced_top = get_mdtraj_topology_from_pmd(sliced_pmd)
         logger.info(toc())
 
         return sliced_top, i_atoms
@@ -384,6 +397,7 @@ class EasyTrajH5File(EasyH5File):
         """
 
         kwargs = Dict(topology=self.fetch_topology(atom_indices))
+        logger.info(f"{kwargs['topology']}")
 
         if atom_indices is None:
             atom_indices = slice(None)

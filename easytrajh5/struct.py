@@ -1,3 +1,4 @@
+import importlib.util
 import itertools
 import logging
 import pickle
@@ -26,9 +27,21 @@ For units:
 """
 
 
+def patch_pmd(pmd):
+    # Compatibility for parmed 3.4.3 => 4.*
+    for a in pmd.atoms:
+        for key in ["formal_charge", "hybridization", "aromatic"]:
+            if not hasattr(a, key):
+                setattr(a, key, None)
+    return pmd
+
+
 def dump_parmed(pmd: parmed.Structure, fname: str):
+    pmd = patch_pmd(pmd)
+    state = pmd.__getstate__()
+    state["parmed_version"] = parmed.__version__
     with open(fname, "wb") as handle:
-        pickle.dump(file=handle, obj=pmd.__getstate__())
+        pickle.dump(file=handle, obj=state)
 
 
 def load_parmed(fname: str) -> parmed.Structure:
@@ -37,11 +50,14 @@ def load_parmed(fname: str) -> parmed.Structure:
 
     with open(fname, "rb") as handle:
         state = pickle.load(file=handle)
+        # Compatibility for parmed 3.4.3 => 4.*
         if version.parse(parmed.__version__) > version.parse("3.4.3"):
             if "links" not in state:
                 state["links"] = TrackedList()
         pmd = parmed.structure.Structure()
         pmd.__setstate__(state)
+        pmd = patch_pmd(pmd)
+
     return pmd
 
 
@@ -71,8 +87,32 @@ def get_parmed_from_parmed_or_pdb(pdb_or_parmed: str) -> parmed.Structure:
     return pmd
 
 
+def get_parmed_from_mdtraj_topology_and_positions(topology, positions_angstroms):
+    openmm_spec = importlib.util.find_spec("openmm")
+    if openmm_spec is not None:
+        return parmed.openmm.load_topology(
+            topology.to_openmm(), xyz=positions_angstroms
+        )
+    else:
+        logger.info("no openmm: save temp.pdb for mdtraj->parmed")
+        positions_nm = positions_angstroms / 10
+        traj = mdtraj.Trajectory(positions_nm, topology)
+        traj.save_pdb("temp.pdb", force_overwrite=True)
+        return parmed.load_file("temp.pdb")
+
+
+def get_mdtraj_topology_from_pmd(pmd):
+    openmm_spec = importlib.util.find_spec("openmm")
+    if openmm_spec is not None:
+        return mdtraj.Topology.from_openmm(pmd.topology)
+    else:
+        pmd.save("temp.pdb", overwrite=True)
+        return mdtraj.load_topology("temp.pdb")
+
+
 def get_parmed_from_mdtraj(traj: mdtraj.Trajectory, i_frame=0) -> parmed.Structure:
-    return parmed.openmm.load_topology(traj.top.to_openmm(), xyz=traj.xyz[i_frame])
+    positions_angs = traj.xyz[i_frame] * 10
+    return get_parmed_from_mdtraj_topology_and_positions(traj.top, positions_angs)
 
 
 def get_parmed_from_openmm(openmm_topology, positions=None) -> parmed.Structure:
@@ -84,15 +124,15 @@ def get_parmed_from_openmm(openmm_topology, positions=None) -> parmed.Structure:
 
 def get_mdtraj_from_parmed(pmd: parmed.Structure) -> mdtraj.Trajectory:
     return mdtraj.Trajectory(
-        xyz=pmd.coordinates / 10, topology=mdtraj.Topology.from_openmm(pmd.topology)
+        xyz=pmd.coordinates / 10, topology=get_mdtraj_topology_from_pmd(pmd)
     )
 
 
-def get_mdtraj_from_openmm(openmm_topology, openmm_positions) -> mdtraj.Trajectory:
-    if unit.is_quantity(openmm_positions):
-        openmm_positions = openmm_positions.value_in_unit(unit.nanometer)
+def get_mdtraj_from_openmm(openmm_topology, positions_nm) -> mdtraj.Trajectory:
+    if unit.is_quantity(positions_nm):
+        positions_nm = positions_nm.value_in_unit(unit.nanometer)
     mdtraj_topology = mdtraj.Topology.from_openmm(openmm_topology)
-    return mdtraj.Trajectory(topology=mdtraj_topology, xyz=openmm_positions)
+    return mdtraj.Trajectory(topology=mdtraj_topology, xyz=positions_nm)
 
 
 def calc_residue_contacts_with_mdtraj(

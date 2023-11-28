@@ -12,6 +12,7 @@ from .struct import (
     get_mdtraj_from_parmed,
     calc_residue_contacts_with_mdtraj,
     slice_parmed,
+    get_mdtraj_topology_from_pmd
 )
 
 logger = logging.getLogger(__name__)
@@ -140,7 +141,7 @@ def process_expr(pmd, expr):
         amber_mask = AmberMask(pmd, expr[6:])
         return [i_atom for i_atom, mask in enumerate(amber_mask.Selection()) if mask]
     elif expr_lower.startswith("mdtraj "):
-        mdtraj_top = mdtraj.Topology.from_openmm(pmd.topology)
+        mdtraj_top = get_mdtraj_topology_from_pmd(pmd)
         return mdtraj_top.select(expr[6:]).tolist()
     else:
         return select_keywords(pmd, expr)
@@ -217,10 +218,10 @@ def parse_number_list(num_str_or_list):
 def select_resi(pmd, expr):
     i_residues = parse_number_list(expr)
     result = []
-    for residue in pmd.topology.residues():
-        if residue.index in i_residues:
-            for a in residue.atoms():
-                result.append(a.index)
+    for residue in pmd.residues:
+        if residue.idx in i_residues:
+            for a in residue.atoms:
+                result.append(a.idx)
     return result
 
 
@@ -352,10 +353,10 @@ def select_keywords(pmd: parmed.Structure, expr: str) -> [int]:
 
 
 def get_n_residue_of_mask(pmd: parmed.Structure, mask: str):
-    n_res = pmd.topology.getNumResidues()
+    n_res = len(pmd.residues)
     residues = numpy.zeros(n_res, dtype=int)
     i_atoms = select_mask(pmd, mask, is_fail_on_empty=False)
-    n_atom = pmd.topology.getNumAtoms()
+    n_atom = len(pmd.atoms)
     if len(i_atoms) == n_atom:
         return n_res
     for a in slice_parmed(pmd, i_atoms):
