@@ -65,6 +65,20 @@ def pdb(h5_trajectory, mask, i):
 
 
 @h5.command(no_args_is_help=True)
+@click.argument("h5", default="trajectory.h5")
+@click.option("--mask", default=None, help="atom selection", show_default=True)
+@click.option("--i", "-i", default=0, help="frame", show_default=True)
+def parmed(h5_trajectory, mask, i):
+    """
+    Extract parmed from dataset:parmed of an H5
+    """
+    pdb = Path(h5_trajectory).with_suffix(".pdb")
+    pmd = EasyTrajH5File(h5_trajectory, atom_mask=mask).get_parmed_from_dataset(i_frame=i)
+    pmd.save(pdb, overwrite=True)
+    print(f"Wrote {pdb=} {i=} {mask=}")
+
+
+@h5.command(no_args_is_help=True)
 @click.argument("h5-pdb-parmed")
 @click.argument("mask", default=None, required=False)
 @click.option("--pdb", help="Save to PDB")
