@@ -2,6 +2,7 @@ import importlib.util
 import itertools
 import logging
 import pickle
+import tempfile
 
 import mdtraj
 import parmed
@@ -97,8 +98,10 @@ def get_parmed_from_mdtraj_topology_and_positions(topology, positions_angstroms)
         logger.info("no openmm: save temp.pdb for mdtraj->parmed")
         positions_nm = positions_angstroms / 10
         traj = mdtraj.Trajectory(positions_nm, topology)
-        traj.save_pdb("temp.pdb", force_overwrite=True)
-        return parmed.load_file("temp.pdb")
+        s = next(tempfile._get_candidate_names())
+        temp_pdb = f"temp.{s}.pdb"
+        traj.save_pdb(temp_pdb, force_overwrite=True)
+        return get_parmed_from_pdb(temp_pdb)
 
 
 def get_mdtraj_topology_from_pmd(pmd):
@@ -106,8 +109,10 @@ def get_mdtraj_topology_from_pmd(pmd):
     if openmm_spec is not None:
         return mdtraj.Topology.from_openmm(pmd.topology)
     else:
-        pmd.save("temp.pdb", overwrite=True)
-        return mdtraj.load_topology("temp.pdb")
+        s = next(tempfile._get_candidate_names())
+        temp_pdb = f"temp.{s}.pdb"
+        pmd.save(temp_pdb, overwrite=True)
+        return mdtraj.load_topology(temp_pdb)
 
 
 def get_parmed_from_mdtraj(traj: mdtraj.Trajectory, i_frame=0) -> parmed.Structure:
@@ -115,11 +120,11 @@ def get_parmed_from_mdtraj(traj: mdtraj.Trajectory, i_frame=0) -> parmed.Structu
     return get_parmed_from_mdtraj_topology_and_positions(traj.top, positions_angs)
 
 
-def get_parmed_from_openmm(openmm_topology, positions=None) -> parmed.Structure:
+def get_parmed_from_openmm(openmm_topology, positions_angstroms=None) -> parmed.Structure:
     """
-    :param positions: unit.Quantity(dist) | [float] in angstroms
+    :param positions_angstroms: unit.Quantity(dist) | [float] in angstroms
     """
-    return parmed.openmm.load_topology(openmm_topology, xyz=positions)
+    return parmed.openmm.load_topology(openmm_topology, xyz=positions_angstroms)
 
 
 def get_mdtraj_from_parmed(pmd: parmed.Structure) -> mdtraj.Trajectory:
