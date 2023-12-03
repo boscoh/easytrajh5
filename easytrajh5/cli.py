@@ -9,7 +9,7 @@ import easytrajh5.show
 from easytrajh5.h5 import EasyH5File
 from easytrajh5.manager import TrajectoryManager
 from easytrajh5.select import get_n_residue_of_mask, select_mask
-from easytrajh5.struct import slice_parmed, get_parmed_from_parmed_or_pdb
+from easytrajh5.struct import slice_parmed, get_parmed_from_parmed_or_pdb, load_parmed
 from easytrajh5.traj import EasyTrajH5File
 
 logger = logging.getLogger(__name__)
@@ -65,15 +65,33 @@ def pdb(h5_trajectory, mask, i):
 
 
 @h5.command(no_args_is_help=True)
-@click.argument("h5", default="trajectory.h5")
+@click.argument("h5")
+@click.argument("parmed")
+@click.argument("dataset", default="parmed")
+def insert_parmed(h5, parmed, dataset):
+    """
+    Insert parmed into dataset:parmed of an H5
+    """
+    if dataset is None:
+        dataset = "parmed"
+    in_pmd = load_parmed(parmed)
+    n_atom_in_parmed = len(in_pmd.atoms)
+    with EasyTrajH5File(h5) as traj_file:
+        assert n_atom_in_parmed == traj_file.get_n_atom()
+        traj_file.insert_file_to_dataset(dataset, parmed)
+        logger.info(f"Inserted {parmed} to {h5}:parmed")
+
+
+@h5.command(no_args_is_help=True)
+@click.argument("h5")
 @click.option("--mask", default=None, help="atom selection", show_default=True)
 @click.option("--i", "-i", default=0, help="frame", show_default=True)
-def parmed(h5_trajectory, mask, i):
+def parmed(h5, mask, i):
     """
-    Extract parmed from dataset:parmed of an H5
+    Extract parmed from dataset:parmed of an H5 with optional frame
     """
-    pdb = Path(h5_trajectory).with_suffix(".pdb")
-    pmd = EasyTrajH5File(h5_trajectory, atom_mask=mask).get_parmed_from_dataset(i_frame=i)
+    pdb = Path(h5).with_suffix(".pdb")
+    pmd = EasyTrajH5File(h5, atom_mask=mask).get_parmed_from_dataset(i_frame=i)
     pmd.save(pdb, overwrite=True)
     print(f"Wrote {pdb=} {i=} {mask=}")
 

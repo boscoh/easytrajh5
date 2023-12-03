@@ -293,6 +293,9 @@ class EasyTrajH5File(EasyH5File):
     def get_n_frame(self):
         return self.get_dataset("coordinates").shape[0]
 
+    def get_n_atom(self):
+        return self.get_dataset("coordinates").shape[1]
+
     def __len__(self):
         return self.get_n_frame()
 
