@@ -3,6 +3,7 @@ import importlib.util
 
 from mdtraj import load_hdf5
 from path import Path
+import numpy
 
 from easytrajh5.select import get_n_residue_of_mask
 from easytrajh5.traj import EasyTrajH5File
@@ -33,6 +34,16 @@ def test_get_parmed():
 
     pmd = EasyTrajH5File(h5, atom_mask="mdtraj name CA").get_topology_parmed()
     assert len(pmd.atoms) == 3
+
+
+def test_get_frames():
+    h5 = this_dir / "aaa_trajectory.h5"
+    f = EasyTrajH5File(h5)
+    traj = f.read_as_traj()
+    i_frames = [0, 5, 10]
+    frames = f.read_frame_slice_as_traj(i_frames, None)
+    for i_slice, i_frame in enumerate(i_frames):
+        assert numpy.array_equal(traj.xyz[i_frame], frames.xyz[i_slice])
 
 
 def test_blobs():

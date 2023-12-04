@@ -30,6 +30,12 @@ logger = logging.getLogger(__name__)
 _Slice = TypeVar("_Slice", bound=Sequence)
 
 
+def check_is_int_list(a):
+    if not isinstance(a, list):
+        return False
+    return all(isinstance(i, int) for i in a)
+
+
 class EasyTrajH5File(EasyH5File):
     """
     EasyTrajH5File is an object used to conviently process mdtraj-type
@@ -395,7 +401,7 @@ class EasyTrajH5File(EasyH5File):
         self, frame_slice, atom_indices, coordinates_only=False
     ):
         """
-        :param frame_slice: int | slice(0, n, stride)
+        :param frame_slice: int | slice(0, n, stride) | [int]
         :param atom_indices: list[int] | None
         """
 
@@ -416,7 +422,7 @@ class EasyTrajH5File(EasyH5File):
                 dataset = self.get_dataset(field.key)
 
                 if len(field.shape) == 3:
-                    if isinstance(frame_slice, int):
+                    if isinstance(frame_slice, int) or check_is_int_list(frame_slice):
                         data = dataset[frame_slice, atom_indices, :]
                     else:
                         data = self.read_atom_dataset_progressively(
