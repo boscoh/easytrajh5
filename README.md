@@ -1,7 +1,8 @@
 
 # EasyTrajH5
 
-Trajectory management for mdtraj H5 files
+Trajectory management for mdtraj H5 files with atom selection language
+and efficient data operations via the h5py library.
 
 ## Installation
 
@@ -10,7 +11,7 @@ Trajectory management for mdtraj H5 files
 ## Quick Guide
 
 Our main file object `EasyTrajH5` is a drop-in replacement
-for `mdtraj.H5TrajectryFile` with extra functionality.
+for `mdtraj.H5TrajectryFile`:
 
 ```python
 from easytrajh5.traj import EasyTrajH5File
@@ -142,10 +143,12 @@ i_atoms = select_mask(pmd, "not {solvent}")
 sliced_pmd = slice_parmed(pmd, i_atoms)
 ```
 
-If you need to convert between different MD objects, in `easytrajh5.struct`, 
-there are some common manipulations:
+Some common conversions and loaders in `easytrajh5.struct` for `parmed.Structure` and
+`mdtraj.Trajectory` objects:
 
 ```python
+import parmed, mdtraj
+
 def dump_parmed(pmd: parmed.Structure, fname: str): 
 def load_parmed(fname: str) -> parmed.Structure:
 def get_parmed_from_pdb(pdb: str) -> parmed.Structure:
