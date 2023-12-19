@@ -43,6 +43,8 @@ def dump_parmed(pmd: parmed.Structure, fname: str):
     pmd = patch_pmd(pmd)
     state = pmd.__getstate__()
     state["parmed_version"] = parmed.__version__
+    if hasattr(pmd, "extra"):
+        state["extra"] = pmd.extra
     with open(fname, "wb") as handle:
         pickle.dump(file=handle, obj=state)
 
@@ -50,7 +52,6 @@ def dump_parmed(pmd: parmed.Structure, fname: str):
 def load_parmed(fname: str) -> parmed.Structure:
     with open(fname, "rb") as handle:
         state = pickle.load(file=handle)
-
     # Compatibility for parmed 3.4.3 => 4.*
     if version.parse(parmed.__version__) > version.parse("3.4.3"):
         if "links" not in state:
@@ -58,7 +59,8 @@ def load_parmed(fname: str) -> parmed.Structure:
     pmd = parmed.structure.Structure()
     pmd.__setstate__(state)
     pmd = patch_pmd(pmd)
-
+    if "extra" in state:
+        pmd.extra = state["extra"]
     return pmd
 
 
