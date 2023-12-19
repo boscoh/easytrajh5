@@ -5,7 +5,7 @@ import numpy
 from path import Path
 from pydash import py_
 
-from easytrajh5.h5 import EasyH5File, dump_attr_to_h5, dump_value_to_h5
+from easytrajh5.h5 import EasyH5File,  dump_attr_to_h5, dump_value_to_h5
 
 this_dir = Path(__file__).abspath().parent
 parmed = this_dir / "aaa-dry.parmed"

@@ -13,6 +13,7 @@ from mdtraj.reporters.basereporter import _BaseReporter
 from mdtraj.utils import ensure_type, in_units_of
 from mdtraj.utils.unitcell import lengths_and_angles_to_box_vectors
 from path import Path
+from pydash import py_
 
 from easytrajh5.fs import load_yaml, dump_yaml
 from easytrajh5.pdb import remove_model_lines
@@ -158,11 +159,14 @@ class EasyTrajH5File(EasyH5File):
                 return
 
         if atom_mask:
-            logger.info("setting atom_indices from atom_mask")
-            sliced_top, atom_indices = self.slice_topology(atom_mask)
-            self.atom_indices = atom_indices
-            atom_hash = tuple(atom_indices)
-            self.topology_by_atom_hash[atom_hash] = sliced_top
+            self.set_atom_mask(atom_mask)
+
+    def set_atom_mask(self, atom_mask):
+        logger.info("setting atom_indices from atom_mask")
+        sliced_top, atom_indices = self.slice_topology(atom_mask)
+        self.atom_indices = atom_indices
+        atom_hash = tuple(atom_indices)
+        self.topology_by_atom_hash[atom_hash] = sliced_top
 
     def fetch_topology(self, atom_indices=None) -> Topology:
         if atom_indices is not None:
@@ -239,6 +243,13 @@ class EasyTrajH5File(EasyH5File):
             mdtraj_topology, positions_angstroms
         )
 
+    def get_full_topology_parmed(self, i_frame=0):
+        positions_angstroms = self.get_dataset("coordinates")[i_frame] * 10
+        mdtraj_topology = self.topology
+        return get_parmed_from_mdtraj_topology_and_positions(
+            mdtraj_topology, positions_angstroms
+        )
+
     def get_parmed_from_dataset(self, i_frame=None):
         if not self.has_dataset("parmed"):
             return None
@@ -282,6 +293,16 @@ class EasyTrajH5File(EasyH5File):
         logger.info(toc())
 
         return sliced_top, i_atoms
+
+    def select_mask(self, mask):
+        pmd = self.get_full_topology_parmed()
+        return select_mask(pmd, mask, is_fail_on_empty=False)
+
+    def select_mask_residues(self, mask):
+        pmd = self.get_full_topology_parmed()
+        i_atoms = select_mask(pmd, mask, is_fail_on_empty=False)
+        i_residues = [a.residue.idx for a in slice_parmed(pmd, i_atoms)]
+        return py_.sort(py_.uniq(i_residues))
 
     @property
     def topology(self) -> Topology:
@@ -544,6 +565,7 @@ class EasyTrajH5File(EasyH5File):
         self.flush()
         logger.info(toc())
         logger.info(f'final shape: {frames_by_key["coordinates"].shape}')
+
 
 
 class EasyTrajH5Reporter(_BaseReporter):

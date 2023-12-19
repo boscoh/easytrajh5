@@ -111,3 +111,15 @@ def test_read_write_easyh5():
     test_mdtraj = reread_h5.read_as_traj()
 
     assert test_mdtraj == easy_traj
+
+
+def test_h5_select_mask():
+    h5 = this_dir / "aaa_trajectory.h5"
+    with EasyTrajH5File(h5) as f:
+        i_atoms = f.select_mask("amber @C")
+        i_residues = f.select_mask_residues("amber @C")
+
+        assert len(i_atoms) > 0
+        assert numpy.array_equal(i_residues, [0, 1, 2])
+
+
