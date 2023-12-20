@@ -171,4 +171,9 @@ def calc_residue_contacts_with_mdtraj(
 def slice_parmed(pmd: parmed.Structure, i_atoms: [int]) -> parmed.Structure:
     # This function avoids the issue where parmed expects a bit
     # mask for selections for full selections but atom indices otherwise
-    return pmd if len(i_atoms) == len(pmd.atoms) else pmd[i_atoms]
+    if len(i_atoms) == len(pmd.atoms):
+        return pmd
+    result = pmd[i_atoms]
+    if hasattr(pmd, 'extra'):
+        result.extra = pmd.extra
+    return result
