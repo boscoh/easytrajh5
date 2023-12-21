@@ -301,7 +301,7 @@ class EasyTrajH5File(EasyH5File):
     def select_mask_residues(self, mask):
         pmd = self.get_full_topology_parmed()
         i_atoms = select_mask(pmd, mask, is_fail_on_empty=False)
-        i_residues = [a.residue.idx for a in slice_parmed(pmd, i_atoms)]
+        i_residues = [pmd[i_atom].residue.idx for i_atom in i_atoms]
         return py_.sort(py_.uniq(i_residues))
 
     @property
