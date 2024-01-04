@@ -567,7 +567,6 @@ class EasyTrajH5File(EasyH5File):
         logger.info(f'final shape: {frames_by_key["coordinates"].shape}')
 
 
-
 class EasyTrajH5Reporter(_BaseReporter):
     @property
     def backend(self):

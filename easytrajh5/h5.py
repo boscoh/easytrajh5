@@ -199,7 +199,7 @@ class EasyH5File:
     def get_attr_dict(self, dataset_key=None) -> dict:
         """Returns h5py attrs as a dict"""
         return {
-            k: self.get_attr(key, dataset_key)
+            key: self.get_attr(key, dataset_key)
             for key in self.get_attr_keys(dataset_key)
         }
 
