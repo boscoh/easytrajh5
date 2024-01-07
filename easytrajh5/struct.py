@@ -49,15 +49,18 @@ def dump_parmed(pmd: parmed.Structure, fname: str):
         pickle.dump(file=handle, obj=state)
 
 
-def load_parmed(fname: str) -> parmed.Structure:
-    with open(fname, "rb") as handle:
-        state = pickle.load(file=handle)
+def patch_parmed_state(state):
     # Compatibility for parmed 3.4.3 => 4.*
     if version.parse(parmed.__version__) > version.parse("3.4.3"):
         if "links" not in state:
             state["links"] = TrackedList()
+    return state
+
+def load_parmed(fname: str) -> parmed.Structure:
+    with open(fname, "rb") as handle:
+        state = pickle.load(file=handle)
     pmd = parmed.structure.Structure()
-    pmd.__setstate__(state)
+    pmd.__setstate__(patch_parmed_state(state))
     pmd = patch_pmd(pmd)
     if "extra" in state:
         pmd.extra = state["extra"]
@@ -122,7 +125,9 @@ def get_parmed_from_mdtraj(traj: mdtraj.Trajectory, i_frame=0) -> parmed.Structu
     return get_parmed_from_mdtraj_topology_and_positions(traj.top, positions_angs)
 
 
-def get_parmed_from_openmm(openmm_topology, positions_angstroms=None) -> parmed.Structure:
+def get_parmed_from_openmm(
+    openmm_topology, positions_angstroms=None
+) -> parmed.Structure:
     """
     :param positions_angstroms: unit.Quantity(dist) | [float] in angstroms
     """
@@ -174,6 +179,6 @@ def slice_parmed(pmd: parmed.Structure, i_atoms: [int]) -> parmed.Structure:
     if len(i_atoms) == len(pmd.atoms):
         return pmd
     result = pmd[i_atoms]
-    if hasattr(pmd, 'extra'):
+    if hasattr(pmd, "extra"):
         result.extra = pmd.extra
     return result

@@ -17,6 +17,7 @@ from pydash import py_
 
 from easytrajh5.fs import load_yaml, dump_yaml
 from easytrajh5.pdb import remove_model_lines
+from easytrajh5.struct import patch_parmed_state
 from .fs import tic, toc
 from .h5 import EasyH5File
 from .select import select_mask
@@ -255,8 +256,8 @@ class EasyTrajH5File(EasyH5File):
             return None
 
         pmd = parmed.Structure()
-        blob = self.get_bytes_dataset("parmed")
-        pmd.__setstate__(pickle.loads(blob))
+        state = pickle.loads(self.get_bytes_dataset("parmed"))
+        pmd.__setstate__(patch_parmed_state(state))
 
         if i_frame is not None:
             coordinates = self.get_dataset("coordinates")
