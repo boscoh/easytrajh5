@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 
 yaml = YAML(typ="safe")
 yaml.default_flow_style = False
+yaml.encoding = 'utf-8'
+yaml.allow_unicode = True
 
 
 class Encoder(json.JSONEncoder):
@@ -53,7 +55,7 @@ def load_json(f, is_addict=False):
 
 def dump_json(o, f):
     check_file_dir(f)
-    with open(f, "w") as handle:
+    with open(f, "w", encoding='utf-8') as handle:
         json.dump(o, handle, cls=Encoder)
 
 
@@ -72,7 +74,7 @@ def load_yaml_dict(f):
 def dump_yaml(o, f, mode="w"):
     check_file_dir(f)
     o = json.loads(json.dumps(o, cls=Encoder))
-    with open(f, mode) as handle:
+    with open(f, mode, encoding='utf-8') as handle:
         yaml.dump(o, handle)
 
 
