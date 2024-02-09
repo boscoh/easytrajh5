@@ -128,7 +128,7 @@ def mask(h5_pdb_parmed, mask, pdb, atom, res, i):
 
     i_atoms = select_mask(pmd, mask, is_fail_on_empty=False)
     if not len(i_atoms):
-        print("Could select any atoms")
+        print("Couldn't select any atoms")
         return
 
     pmd = slice_parmed(pmd, i_atoms)
