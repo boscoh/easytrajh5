@@ -221,8 +221,30 @@ return_values = EasyH5File('new.h5').get_dataset("my_data_set")[:]
 
 ## Command-line utility `easyh5`
 
-We have a command line `easyh5` to interrogate any `h5` file. To get a
-schema of the dataset layout and attributes:
+`easyh5` provides a bunch of useful cli subcommands to interrogate `h5` and related files:
+
+```bash
+Usage: easyh5 [OPTIONS] COMMAND [ARGS]...
+
+  h5: preprocessing and analysis tools
+
+Options:
+  --help  Show this message and exit.
+
+Commands:
+  dataset        Examine contents of h5
+  insert-parmed  Insert parmed into dataset:parmed of an H5
+  mask           Explore residues/atoms of H5/PDB/PARMED using mask
+  merge          Merge a list of H5 files
+  parmed         Extract parmed from dataset:parmed of an H5 with...
+  pdb            Extract PDB of a frame of an H5
+  schema         Examine layout of H5
+  show-chimera   Use CHIMERA to show H5/PDB/PARMED with mask, needs PARMED
+  show-pymol     Use PYMOL to show H5/PDB/PARMED with mask
+  show-vmd       Use VMD to show H5/PDB/PARMED with mask
+```
+
+To get a schema of the dataset layout and attributes:
 
 ```bash
 > easyh5 schema traj.h5
@@ -367,6 +389,26 @@ To check atom selections of the protein:
 # <Residue PRO[129]; chain=1>
 # <Residue PRO[167]; chain=1>
 ```
+
+To extract that as PDB:
+
+```bash
+> easyh5 mask sims/high_bf/trajectory.h5 "amber :PRO" --pdb pro.pdb
+```
+
+There are three sub-commands that help visualize selections in standard viewers:
+
+- `easyh5 show-pymol <PDB> <MASK1> <MASK2>`
+- `easyh5 show-vmd <PDB|PARMED|H5> <MASK1> <MASK2>`
+- `easyh5 show-chimera <PDB|PARMED|H5> <MASK1> <MASK2>`
+
+It will open the structure or trajectory in the corresponding viewers with the first selection
+colored in green, and the second selection in pink.
+
+A configuration file in your systems config directory `rseed.binary.yaml` will be created
+that list the full path name of PYMOL/VMD/CHIMERA. Change this if your copy of the viewer 
+is in a different location.
+
 
 ## Miscellaneous utility 
 
