@@ -1,6 +1,5 @@
 import logging
 
-import mdtraj
 import numpy
 import parmed
 import pydash as py_
@@ -12,7 +11,8 @@ from .struct import (
     get_mdtraj_from_parmed,
     calc_residue_contacts_with_mdtraj,
     slice_parmed,
-    get_mdtraj_topology_from_pmd
+    get_mdtraj_topology_from_pmd,
+    get_parmed_from_parmed_or_pdb,
 )
 
 logger = logging.getLogger(__name__)
@@ -366,3 +366,9 @@ def get_n_residue_of_mask(pmd: parmed.Structure, mask: str):
 
 def slice_parmed_with_mask(pmd, mask):
     return slice_parmed(pmd, select_mask(pmd, mask))
+
+
+def filter_mask(pdb, mask, out_pdb):
+    pmd = get_parmed_from_parmed_or_pdb(pdb)
+    pmd = slice_parmed(pmd, select_mask(pmd, mask))
+    pmd.save(out_pdb, overwrite=True, renumber=False)
