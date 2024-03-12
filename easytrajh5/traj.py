@@ -269,9 +269,6 @@ class EasyTrajH5File(EasyH5File):
             if box_vectors is not None:
                 pmd.box_vectors = box_vectors
 
-        if self.atom_indices is not None:
-            pmd = slice_parmed(pmd, self.atom_indices)
-
         return pmd
 
     def slice_topology(self, atom_mask: str) -> (Topology, [int]):
