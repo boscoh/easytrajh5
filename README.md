@@ -223,7 +223,7 @@ return_values = EasyH5File('new.h5').get_dataset("my_data_set")[:]
 
 `easyh5` provides a bunch of useful cli subcommands to interrogate `h5` and related files:
 
-```bash
+```
 Usage: easyh5 [OPTIONS] COMMAND [ARGS]...
 
   h5: preprocessing and analysis tools
