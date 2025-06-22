@@ -7,7 +7,7 @@ from pydash import py_
 
 from easytrajh5.h5 import EasyH5File,  dump_attr_to_h5, dump_value_to_h5
 
-this_dir = Path(__file__).abspath().parent
+this_dir = Path(__file__).absolute().parent
 parmed = this_dir / "aaa-dry.parmed"
 
 

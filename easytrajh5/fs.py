@@ -102,14 +102,14 @@ def ensure_dir(d):
 
 
 def check_file_dir(f):
-    ensure_dir(Path(f).abspath().parent)
+    ensure_dir(Path(f).absolute().parent)
 
 
 def clear_dir(d):
     path = Path(d)
     if not path.exists():
         ensure_dir(path)
-    elif path.isdir():
+    elif path.is_dir():
         for f in path.files():
             f.remove()
         for d in path.dirs():
@@ -122,7 +122,7 @@ def copy_to_dir(src, dest_dir):
     src, dest_dir = Path(src), Path(dest_dir)
     dest_dir.makedirs_p()
     dst = dest_dir / src.name
-    if dst.abspath() != src.abspath():
+    if dst.absolute() != src.absolute():
         src.copyfile(dst)
 
 
@@ -152,7 +152,7 @@ def move_up_sub_dir(top_dir, glob_str):
         for sibling_f in this_dir.glob("*"):
             if sibling_f.isfile():
                 sibling_f.copy(this_dir.parent)
-            if sibling_f.isdir():
+            if sibling_f.is_dir():
                 sibling_f.copytree(this_dir.parent, dirs_exist_ok=True)
         this_dir.rmtree_p()
 
@@ -203,7 +203,7 @@ def pop_dir():
 
 
 def get_active_branch_name():
-    head_dir = Path(__file__).abspath().parent.parent.parent / ".git" / "HEAD"
+    head_dir = Path(__file__).absolute().parent.parent.parent / ".git" / "HEAD"
     if head_dir.exists():
         with head_dir.open("r") as f:
             content = f.read().splitlines()

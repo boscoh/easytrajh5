@@ -8,7 +8,7 @@ import numpy
 from easytrajh5.select import get_n_residue_of_mask
 from easytrajh5.traj import EasyTrajH5File
 
-this_dir = Path(__file__).abspath().parent
+this_dir = Path(__file__).absolute().parent
 parmed = this_dir / "aaa-dry.parmed"
 h5 = this_dir / "aaa_trajectory.h5"
 

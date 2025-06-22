@@ -1,31 +1,33 @@
-[tool.poetry]
+[project]
 name = "easytrajh5"
-version = "0.2.13"
+version = "0.2.15"
 description = "MD trajectory library"
-authors = ["Bosco Ho <apposite@gmail.com>"]
+authors = [
+    {name = "Bosco Ho", email = "apposite@gmail.com"}
+]
 readme = "README.md"
-packages = [{include = "easytrajh5"}]
+requires-python = ">=3.9"
+dependencies = [
+    "addict",
+    "appdirs",
+    "chevron",
+    "click",
+    "deepdiff",
+    "h5py",
+    "mdtraj",
+    "path",
+    "ParmEd==4.2.2",
+    "pydash",
+    "rich",
+    "ruyaml",
+]
 
-[tool.poetry.scripts]
-easyh5 = 'easytrajh5.cli:h5'
-
-[tool.poetry.dependencies]
-python = "^3.9"
-addict = "*"
-appdirs = "*"
-chevron = "*"
-click = "*"
-deepdiff = "*"
-h5py = "*"
-mdtraj = "*"
-numpy = "*"
-packaging = "*"
-path = "*"
-ParmEd = "4.2.2"
-pydash = "*"
-rich = "*"
-ruyaml = "*"
+[project.scripts]
+easyh5 = "easytrajh5.cli:h5"
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = []
