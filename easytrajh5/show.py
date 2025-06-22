@@ -28,7 +28,7 @@ def get_parmed_and_pdb(filename, is_solvent=True):
     :return: (parmed.Structure, str) - second str is the filename of a PDB file
     """
     filename = Path(filename)
-    ext = filename.ext.lower()
+    ext = filename.suffix.lower()
 
     if ext not in [".pdb", ".parmed"]:
         raise ValueError(

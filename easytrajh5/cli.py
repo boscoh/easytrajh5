@@ -108,7 +108,7 @@ def mask(h5_pdb_parmed, mask, pdb, atom, res, i):
     Explore residues/atoms of H5/PDB/PARMED using mask
     """
     filename = Path(h5_pdb_parmed)
-    ext = filename.ext.lower()
+    ext = filename.suffix.lower()
 
     if ext not in [".h5", ".pdb", ".parmed"]:
         print(f"Can't recognize file extension {h5_pdb_parmed}")

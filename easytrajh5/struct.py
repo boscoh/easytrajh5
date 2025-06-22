@@ -71,7 +71,7 @@ def get_parmed_from_pdb(pdb: str) -> parmed.Structure:
     """
     Reads pdb with a sanity check for model lines that confuses parmed
     """
-    suffix = Path(pdb).ext.lower()
+    suffix = Path(pdb).suffix.lower()
     if not suffix == ".pdb":
         raise ValueError(f"Can't process {pdb} of type {suffix}, only .pdb")
     # Check for issue where mdtraj saves MODEL 0, which throws error in parmed
@@ -83,7 +83,7 @@ def get_parmed_from_parmed_or_pdb(pdb_or_parmed: str) -> parmed.Structure:
     """
     :param pdb_or_parmed: str - either .parmed or .pdb
     """
-    suffix = Path(pdb_or_parmed).ext
+    suffix = Path(pdb_or_parmed).suffix
     if suffix == ".pdb":
         pmd = get_parmed_from_pdb(pdb_or_parmed)
     elif suffix == ".parmed":

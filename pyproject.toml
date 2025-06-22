@@ -1,6 +1,6 @@
 [project]
 name = "easytrajh5"
-version = "0.2.15"
+version = "0.2.16"
 description = "MD trajectory library"
 authors = [
     {name = "Bosco Ho", email = "apposite@gmail.com"}
@@ -29,5 +29,10 @@ easyh5 = "easytrajh5.cli:h5"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.uv]
-dev-dependencies = []
+[tool.hatch.build.targets.sdist]
+include = [
+]
+exclude = [
+    "test",
+    "debug"
+]
